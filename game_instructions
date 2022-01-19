@@ -1,0 +1,8 @@
+roscore
+
+rosrun joystick_pomcp angle_updater.py 
+
+rosrun joystick_pomcp game_manager.py 
+
+roscd joystick_pomcp/src/
+julia hyperplane_inference_simple.jl
