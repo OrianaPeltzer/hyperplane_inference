@@ -3,7 +3,7 @@ Joystick setup for hyperplane inference problem
 
 Dependencies:
 
-Julia 1.3
+Julia 1.3 (add POMDPs, Distributions, Random, Parameters, BeliefUpdaters, StaticArrays, BasicPOMCP, POMDPModelTools, D3Trees, POMDPModels, QMDP, QuickPOMDPs, StatsBase, DataStructures, LightGraphs, MetaGraphs, GraphPlot, POMDPSimulators, POMDPGifs, Colors, Compose, Gadfly, LinearAlgebra, Blink, Infiltrator, RobotOS)
 
 Python 2.7
 
