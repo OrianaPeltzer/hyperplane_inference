@@ -9,7 +9,7 @@ Python 2.7
 
 ROS Melodic http://wiki.ros.org/melodic/Installation/Ubuntu
 
-In Julia, set ENV["PYTHON"]="path_to_ros_specific_python/name_of_executable"
+In Julia, set ENV["PYTHON"]="path_to_ros_specific_python/name_of_executable" and rebuild PyCall
 
 (for using joystick) pip install pyPS4Controller
 
