@@ -1,6 +1,6 @@
 my_belief_colormap = colormap("blues", 20)
 
-function POMDPModelTools.render(pomdp::MapWorld, true_state::InfoState, belief_state::GridBeliefState)
+function POMDPTools.render(pomdp::MapWorld, true_state::GridState, belief_state::GridBeliefState)
 
     nx, ny = pomdp.grid_side, pomdp.grid_side
     cells = []
@@ -100,7 +100,7 @@ end
 
 # render with a path
 
-function POMDPModelTools.render(pomdp::MapWorld, true_state::InfoState, belief_state::GridBeliefState, path)
+function POMDPTools.render(pomdp::MapWorld, true_state::GridState, belief_state::GridBeliefState, path)
 
     path_v = [e.src for e in path]
     dest = path[length(path)].dst

@@ -160,7 +160,7 @@ function initialize_prior_belief(p::MapWorld,pos::GridPosition,A::Matrix,b::Vect
 
                 preference_constraint = NeighborConstraint(A,b,pref,true)
 
-                shortest_path_constrained = LightGraphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
+                shortest_path_constrained = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
 
                 constrained_dist = traversal_time(shortest_path_constrained, p.map_graph)
                 diff = constrained_dist - shortest_path_distance
@@ -193,7 +193,7 @@ function reshape_prior_belief(p::MapWorld,pos::GridPosition,new_pos::GridPositio
                 goal_index = p.K_map[goal[1], goal[2]]
 
                 preference_constraint = NeighborConstraint(A,b,pref,true)
-                shortest_path_constrained = LightGraphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
+                shortest_path_constrained = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
                 constrained_dist = traversal_time(shortest_path_constrained, p.map_graph)
 
                 diff = constrained_dist - shortest_path_distance
@@ -230,7 +230,7 @@ function sample_preference(p::MapWorld, pos::GridPosition,goal::GridPosition,A::
         goal_index = p.K_map[goal[1], goal[2]]
 
         preference_constraint = NeighborConstraint(A,b,pref,true)
-        shortest_path_constrained = LightGraphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
+        shortest_path_constrained = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
         constrained_dist = traversal_time(shortest_path_constrained, p.map_graph)
 
         diff = constrained_dist - shortest_path_distance
@@ -296,7 +296,7 @@ function compute_measurement_likelihood(p::MapWorld, pos::GridPosition, goal::Gr
     pos_index = p.K_map[pos[1], pos[2]]
     goal_index = p.K_map[goal[1], goal[2]]
 
-    path_to_goal = LightGraphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
+    path_to_goal = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
     # @show path_to_goal
     # @show [[get_prop(p.map_graph, e.src, :x), get_prop(p.map_graph, e.src, :y)] for e in path_to_goal]
     distance_to_goal = traversal_time(path_to_goal, p.map_graph)
@@ -306,7 +306,7 @@ function compute_measurement_likelihood(p::MapWorld, pos::GridPosition, goal::Gr
 
     # @show human_intended_index
 
-    path_to_goal_from_intended_index = LightGraphs.a_star(p.map_graph, human_intended_index, goal_index, preference_constraint, p.dist_matrix_DP)
+    path_to_goal_from_intended_index = Graphs.a_star(p.map_graph, human_intended_index, goal_index, preference_constraint, p.dist_matrix_DP)
 
     # @show path_to_goal_from_intended_index
     # @show [[get_prop(p.map_graph, e.src, :x), get_prop(p.map_graph, e.src, :y)] for e in path_to_goal_from_intended_index]
@@ -449,7 +449,7 @@ end
 function compute_distance_matrix(graph::G where G)
    D = zeros(Float64,nv(graph),nv(graph))
    for v1 in vertices(graph)
-       ds = dijkstra_shortest_paths(graph,v1,LightGraphs.weights(graph))
+       ds = dijkstra_shortest_paths(graph,v1,Graphs.weights(graph))
        D[v1,:] = ds.dists
        # @infiltrate
    end

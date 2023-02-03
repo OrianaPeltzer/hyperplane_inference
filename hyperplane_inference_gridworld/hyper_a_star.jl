@@ -1,6 +1,6 @@
 # A* shortest-path algorithm with hyperplane constraints
 
-function LightGraphs.a_star_impl!(g::AbstractGraph,# the graph
+function Graphs.a_star_impl!(g::AbstractGraph,# the graph
     t, # the end vertex
     frontier,               # an initialized heap containing the active vertices
     constraint::NeighborConstraint,
@@ -16,7 +16,7 @@ function LightGraphs.a_star_impl!(g::AbstractGraph,# the graph
             return path
         end
 
-        for v in LightGraphs.outneighbors(g, u)
+        for v in Graphs.outneighbors(g, u)
 
             # Skip node if it violates any of the constraints
             if violates_constraint(g, constraint, v, path)
@@ -56,15 +56,15 @@ empty_colormap(nv::Integer) = zeros(UInt8, nv)
 Return a vector of edges comprising the shortest path between vertices `s` and `t`
 using the [A* search algorithm](http://en.wikipedia.org/wiki/A%2A_search_algorithm).
 An optional heuristic function and edge distance matrix may be supplied. If missing,
-the distance matrix is set to [`LightGraphs.DefaultDistance`](@ref) and the heuristic is set to
+the distance matrix is set to [`Graphs.DefaultDistance`](@ref) and the heuristic is set to
 `n -> 0`.
 """
-function LightGraphs.a_star(g::AbstractGraph{U},  # the g
+function Graphs.a_star(g::AbstractGraph{U},  # the g
     s::Integer,                       # the start vertex
     t::Integer,                       # the end vertex
     constraints::NeighborConstraint,         # constraints on which nodes can be traversed at which time
     distmx_DP,
-    distmx::AbstractMatrix{T}=LightGraphs.weights(g),
+    distmx::AbstractMatrix{T}=Graphs.weights(g),
     heuristic::Function=n -> zero(T)) where {C, T, U}
 
     E = Edge{eltype(g)}
@@ -84,5 +84,5 @@ function LightGraphs.a_star(g::AbstractGraph{U},  # the g
     frontier[(zero(T), Vector{E}(), U(s))] = zero(T)
     colormap = empty_colormap(nv(g))
     colormap[s] = 1
-    LightGraphs.a_star_impl!(g, U(t), frontier, constraints, colormap, distmx, heuristic_n)
+    Graphs.a_star_impl!(g, U(t), frontier, constraints, colormap, distmx, heuristic_n)
 end

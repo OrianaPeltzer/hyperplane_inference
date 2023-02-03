@@ -5,10 +5,9 @@ using POMDPs
 using Distributions: Normal
 using Random
 using Parameters
-using BeliefUpdaters
+using POMDPTools
 using StaticArrays
 using BasicPOMCP
-using POMDPModelTools
 using D3Trees
 using POMDPModels
 using QMDP
@@ -17,10 +16,9 @@ using QuickPOMDPs
 using StatsBase
 using DataStructures # For astar priority queue
 
-using LightGraphs, MetaGraphs
+using Graphs, MetaGraphs
 using GraphPlot
 
-using POMDPSimulators
 using POMDPGifs
 using Colors
 using Compose
@@ -122,14 +120,17 @@ function initialize_map()
     # end_vertex = 11
     #
     # preference_constraint = NeighborConstraint(curr_belstate.neighbor_A,curr_belstate.neighbor_b,1,true)
-    # path = LightGraphs.a_star(mapworld_pomdp.map_graph, start_vertex, end_vertex, preference_constraint, mapworld_pomdp.dist_matrix_DP)
+    # path = Graphs.a_star(mapworld_pomdp.map_graph, start_vertex, end_vertex, preference_constraint, mapworld_pomdp.dist_matrix_DP)
     #
     # @show path
 
     # For visualization
-    c = POMDPModelTools.render(mapworld_pomdp, true_state, curr_belstate)
+    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
     draw(SVGJS("foo.svg", 6inch, 6inch), c)
-    loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
+    # Ubuntu
+    # loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
+    # Windows
+    loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
 
     return
 end
@@ -204,10 +205,13 @@ function iterate_pomcp(angle::Float64)
         println("--------------------------")
     end
 
-    c = POMDPModelTools.render(mapworld_pomdp, true_state, curr_belstate)
+    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
 
     draw(SVGJS("foo.svg", 6inch, 6inch), c)
-    loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
+    # Ubuntu
+    # loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
+    # Windows
+    loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
 
     return
 
