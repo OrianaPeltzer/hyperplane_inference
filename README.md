@@ -24,6 +24,7 @@ Setup
 For launching the inference game:
 - Plug in Joystick with USB.
 - roscore
+
 Launch rosnodes:
 - angle_updater.py (or angle_updater_windows.py if using windows)
 - game_manager.py
