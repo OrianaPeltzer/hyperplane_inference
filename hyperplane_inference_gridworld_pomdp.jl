@@ -1,5 +1,6 @@
+#!/usr/bin/env julia
 # Gridworld Inference problem: Infer the goal and neighboring hyperplanes.
-# Action is compliant with human instructions.
+# Action is solution to a POMDP problem where incorrect set transitions are penalized
 
 using POMDPs
 using Distributions: Normal
@@ -26,7 +27,7 @@ using Blink
 # For embed
 using Infiltrator
 
-#!/usr/bin/env julia
+
 
 using RobotOS
 @rosimport std_msgs.msg.Header
@@ -37,11 +38,24 @@ using .geometry_msgs.msg
 using .std_msgs.msg
 
 
+# ---------------- Experiment Parameters -----------------------
+# Map of the environment
+map_name = "2_10x10_squareobstacle_map"
+# Save directory
+save_dir = "~/SA_data/"*map_name*"/"
+
+
+
+
+
+
+include("hyperplane_inference_gridworld/convex_sets.jl")
+map_dir = "maps/"*map_name*".jl"
+include(map_dir)
+
 # Grid world, map, pomdp and problem-specific functions
 include("hyperplane_inference_gridworld/world.jl")
-
 include("hyperplane_inference_gridworld/hyper_a_star.jl")
-
 # Helper functions for problem specifics
 include("hyperplane_inference_gridworld/utilities.jl")
 # POMCP-specific functions to solve the POMDP
@@ -67,34 +81,21 @@ function initialize_map()
 
     RNG = MersenneTwister(1234)
 
-    # Generate a true 10x10 false/true map and ensure start position is empty (false)
+    # Retrieve the occupancy map from the .jl file
     grid_side = 10
-    OBSTACLE_MAP = fill(false, grid_side, grid_side)
-    OBSTACLE_MAP[5,5] = true
-    OBSTACLE_MAP[5,6] = true
-    OBSTACLE_MAP[6,5] = true
-    OBSTACLE_MAP[6,6] = true
-    println("OBSTACLE MAP: ", OBSTACLE_MAP)
-    # OBSTACLE_MAP[1, 1] = false
-    # OBSTACLE_MAP[1, 2] = false # Giving robot a way out hehe
+    OBSTACLE_MAP = map_occupancy_grid()
 
     BII_gamma=0.9
 
     map_graph, K_map = initialize_grid_graph(OBSTACLE_MAP)
 
-    draw(SVG("mapgraph.svg", 16cm, 16cm), gplot(map_graph))
+    # Load the hyperplane graph for the environment
+    G = loadgraph("maps/"*map_name*".mg", MGFormat())
 
-    # println("Vertices in map_graph: ", vertices(map_graph))
+    println("Loaded hyperplane graph!")
 
-    goal_options = [GridPosition(x,8) for x=1:grid_side if OBSTACLE_MAP[x,8] == false]
-
+    start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
     dist_matrix, dist_matrix_DP = get_dist_matrix(map_graph)
-
-    @show K_map
-    @show goal_options
-
-    @show dist_matrix[11,5]
-    @show dist_matrix_DP[11,5]
 
     # define POMDP
     mapworld_pomdp = MapWorld(obstacle_map = OBSTACLE_MAP,
@@ -105,7 +106,11 @@ function initialize_map()
                               K_map = K_map,
                               dist_matrix = dist_matrix,
                               dist_matrix_DP = dist_matrix_DP,
-                              BII_gamma = BII_gamma) # Other args are default
+                              BII_gamma = BII_gamma,
+                              hyperplane_graph = G,
+                              start_position = start_pos,
+                              true_goal_index = true_goal_index,
+                              true_preference = M_pref) # Other args are default
 
     curr_belstate = initial_belief_state(mapworld_pomdp)
     true_state = initial_state(mapworld_pomdp)
@@ -121,21 +126,22 @@ function initialize_map()
 
     # For visualization
     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    draw(SVGJS("foo.svg", 6inch, 6inch), c)
+    draw(SVGJS(save_directory*"foo.svg", 6inch, 6inch), c)
     # Ubuntu
+    loadurl(my_window, "file:///home/peltzer/SA_data/"*map_name*"/foo.svg")
     # loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
     # Windows
-    loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
+    # loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
 
     return
 end
 
 # Main loop - is called each time an observation is received
-function iterate_pomcp(angle::Float64)
+function iterate_pomcp(angle::Float64, solver; display=true, iteration=0)
 
     RNG = MersenneTwister(1234)
 
-    println("Started pomcp solving")
+    println("Solver initialized.")
 
     global mapworld_pomdp
     global curr_belstate
@@ -153,7 +159,7 @@ function iterate_pomcp(angle::Float64)
     end
 
     # Turn the input angle into an observation
-    println("Angle detected: ", angle)
+    println("Angle observed: ", angle)
     heading = angle_to_heading(angle)
     println("Resulting heading: ", heading)
     o = HumanInputObservation(heading,true,true)
@@ -170,8 +176,12 @@ function iterate_pomcp(angle::Float64)
 
 
     # Take compliant action
-    a = heading
-    # a, info = action_info(policy, curr_belstate, tree_in_info=true);
+    # a = heading
+
+    # Solve POMDP!
+    policy = solve(solver, mapworld_pomdp)
+    a, info = action_info(policy, curr_belstate);#, tree_in_info=true);
+    println("POMCP Iteration solved!")
     @show a
 
     # Generate new state (the observation is irrelevant)
@@ -202,17 +212,59 @@ function iterate_pomcp(angle::Float64)
 
     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
 
-    draw(SVGJS("foo.svg", 6inch, 6inch), c)
+    draw(SVGJS(save_dir*iteration*".svg", 6inch, 6inch), c)
     # Ubuntu
+    if display
+        loadurl(my_window, "file:///home/peltzer/SA_data/"*map_name*"/foo.svg")
+    end
     # loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
     # Windows
-    loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
+    # loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
 
-    return
+    return true_state.position == goal
 
 end
 
 
+
+function simulate_pomcp()
+    """Simulate an instance of the pomdp problem"""
+
+    global mapworld_pomdp
+    global curr_belstate
+    global true_state
+    global my_window
+
+    my_window = Window()
+
+    initialize_map()
+    println("Map initialized!")
+
+    solver = POMCPSolver(rng=RNG, max_depth=15, tree_queries = 100000)
+
+    iteration = 0
+    max_iterations = 30
+    problem_terminated = false
+
+    while (~problem_terminated && iteration < max_iterations)
+        iteration += 1
+
+        o = sample_human_action(mapworld_pomdp, true_state)
+
+        problem_terminated = iterate_pomcp(o, solver, display=false)
+
+        println("Finished iteration "*iteration)
+
+    end
+
+    if problem_terminated
+        println("Success!")
+    end
+
+end
+
+
+# ROS functions
 function callback(msg::Float64Msg, pub_obj::Publisher{BoolMsg})
     angle = msg.data
     println("angle received: ", angle)
@@ -224,8 +276,7 @@ function callback(msg::Float64Msg, pub_obj::Publisher{BoolMsg})
 end
 
 
-
-function main()
+function main_ros()
 
     global my_window
     my_window = Window()
@@ -245,5 +296,5 @@ end
 
 
 if ! isinteractive()
-    main()
+    simulate_pomcp()
 end
