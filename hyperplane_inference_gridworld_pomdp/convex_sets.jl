@@ -32,6 +32,14 @@ struct waitlisted_polytope
     source_vertex::Int64
     # shared_face_index_source::Int64
     shared_face_index_global::Int64
+    flipped_index_in_reduced_source::Int64
+end
+
+# Each vertex has a list of those which are possible preferences
+struct pref_neighbor
+    edge_index::Int64
+    idx_in_A::Int64
+    neighbor_vertex_id::Int64
 end
 
 """Tests whether a point is located within the bounds"""
@@ -88,6 +96,77 @@ function find_reduced_representation(H_A::Matrix, H_b::Array, num_obstacle_hyper
     return reduced_A[2:end,:], reduced_b[2:end], contour_indices, reduced_idx_dict
 end
 
+function get_idx_in_A_from_graph_pref_index(G::MetaGraph, v_idx::Int64, graph_pref_vtx_id::Int64)
+    """Gets the index in the local graph relevant to v_idx of the preference corresponding to
+    a transition to neighbor with global vertex id graph_pref."""
+
+    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+
+    for n in neighbors_of_v
+        if n.neighbor_vertex_id == graph_pref_vtx_index
+            return n.idx_in_A
+        end
+    end
+
+    @show v_idx
+    @show graph_pref_vtx_id
+    println("(A index query) Didn't find the desired graph_pref in v_idx neighbors!")
+    return nothing
+end
+
+function get_edge_number_from_graph_pref_index(G::MetaGraph, v_idx::Int64, graph_pref_vtx_id::Int64)
+    """Gets the index in the local graph relevant to v_idx of the preference corresponding to
+    a transition to neighbor with global vertex id graph_pref."""
+
+    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+
+    for n in neighbors_of_v
+        if n.neighbor_vertex_id == graph_pref_vtx_index
+            return n.edge_index
+        end
+    end
+
+    @show v_idx
+    @show graph_pref_vtx_id
+    println("(edge index query) Didn't find the desired graph_pref in v_idx neighbors!")
+    return nothing
+end
+
+function get_edge_number_from_index_in_A(G::MetaGraph, v_idx::Int64, idx_in_A::Int64)
+    """Gets the index in the local graph relevant to v_idx of the preference corresponding to
+    a transition to neighbor with global vertex id graph_pref."""
+
+    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+
+    for n in neighbors_of_v
+        if n.idx_in_A == idx_in_A
+            return n.edge_index
+        end
+    end
+
+    @show v_idx
+    @show idx_in_A
+    println("(edge number from idx_in_A query) Didn't find the desired graph_pref in v_idx neighbors!")
+    return nothing
+end
+
+function get_pref_from_edge_number(G::MetaGraph, v_idx::Int64, edge_number::Int64)
+    """Gets the index in the local graph relevant to v_idx of the preference corresponding to
+    a transition to neighbor with global vertex id graph_pref."""
+
+    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+
+    for n in neighbors_of_v
+        if n.edge_index == edge_number
+            return n
+        end
+    end
+
+    @show v_idx
+    @show graph_pref_vtx_id
+    println("(edge index query) Didn't find the desired graph_pref in v_idx neighbors!")
+    return nothing
+end
 
 # struct node_property
 #     node_A::Matrix
@@ -167,7 +246,8 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
     set_prop!(G,vtx_id, :b, reduced_b)
     set_prop!(G,vtx_id, :contour_indices, contour_indices)
     set_prop!(G,vtx_id, :state, H_state)
-    set_prop!(G, vtx_id, :mapping, reduced_idx_dict)
+    set_prop!(G,vtx_id, :mapping, reduced_idx_dict)
+    set_prop!(G,vtx_id, :pref_neighbors, []) # contains neighbor preference info
     vtx_map[H_state] = vtx_id # store vertex in state dictionary
 
 
@@ -188,7 +268,7 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
             # verify that the neighbor is not an obstacle
             if neighbor_state ∉ obstacle_states
                 # Add the neighbor to the queue
-                neighbor_polytope = waitlisted_polytope(neighbor_H_A, neighbor_H_b, neighbor_state, vtx_id, j)
+                neighbor_polytope = waitlisted_polytope(neighbor_H_A, neighbor_H_b, neighbor_state, vtx_id, j, i)
                 enqueue!(openset, neighbor_polytope)
             end
         end
@@ -205,6 +285,23 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
 
            # Add connecting edge (will not happen if edge already exists)
            add_edge!(G,poly.source_vertex, dest, Dict(:shared_face=>poly.shared_face_index_global))
+
+           # ---------- Set preference info ---------------
+           # How many vertices does the source now have? (also index of new edge)
+           edge_index = length(neighbors(G,poly.source_vertex))
+           # Index of the source's reduced A that was flipped to get here
+           idx_in_A = poly.flipped_index_in_reduced_source
+           # Index of the destination
+           neighbor_vertex_id = dest
+
+           # Container of the potential preferred neighbors
+           pref_data = pref_neighbor(edge_index, idx_in_A, neighbor_vertex_id)
+
+           # Add neighbor to existing list and update vertex property
+           d = get_prop(G,poly.source_vertex,:pref_neighbors)
+           append!(g, pref_data)
+           set_prop!(G,poly.source_vertex,:pref_neighbors, d)
+           # -----------------------------------------------
 
         else
            # Add new vertex to the graph
@@ -227,6 +324,24 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
            vtx_map[poly.state] = vtx_id # store vertex in state dictionary
 
 
+           # ---------- Set preference info for source ----------------
+           # How many vertices does the source now have? (also index of new edge)
+           edge_index = length(neighbors(G,poly.source_vertex))
+           # Index of the source's reduced A that was flipped to get here
+           idx_in_A = poly.flipped_index_in_reduced_source
+           # Index of the destination
+           neighbor_vertex_id = vtx_id
+
+           # Container of the potential preferred neighbors
+           pref_data = pref_neighbor(edge_index, idx_in_A, neighbor_vertex_id)
+
+           # Add neighbor to existing list and update vertex property
+           d = get_prop(G,poly.source_vertex,:pref_neighbors)
+           append!(g, pref_data)
+           set_prop!(G,poly.source_vertex,:pref_neighbors, d)
+           # ----------------------------------------------- -----------
+
+
            # Add neighbors into queue
            for i in 1:length(reduced_b)
                if i ∉ contour_indices
@@ -244,7 +359,7 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
                    # verify that the neighbor is not an obstacle
                    if neighbor_state ∉ obstacle_states
                        # Add the neighbor to the queue
-                       neighbor_polytope = waitlisted_polytope(neighbor_H_A, neighbor_H_b, neighbor_state, vtx_id, j)
+                       neighbor_polytope = waitlisted_polytope(neighbor_H_A, neighbor_H_b, neighbor_state, vtx_id, j, i)
                        enqueue!(openset, neighbor_polytope)
                    end
                end
@@ -288,4 +403,4 @@ function test()
     return G
 end
 
-test()
+# test()

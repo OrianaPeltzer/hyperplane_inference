@@ -9,13 +9,73 @@ function Base.rand(rng::AbstractRNG, bs::GridBeliefState)
     # get marginals
     belief_goals = sum(bs.belief_intention, dims=2)
     # Sample a new goal from probabilities
-    goal_index = findfirst(cumsum(belief_goals) .>= rand(rng))
+    goal_index = findfirst(cumsum(belief_goals, dims=1) .>= rand(rng))[1]
 
     # Sample a new preference from the goal and position
-    pref = sample(1:length(bs.belief_intention[goal_index,:]), Weights(bs.belief_intention[goal_index,:]))
+    w = bs.belief_intention[goal_index,:] ./ sum(bs.belief_intention[goal_index,:])
+    pref = sample(1:length(bs.belief_intention[goal_index,:]), Weights(w))
 
     return GridState(pos, done, goal_index, bs.neighbor_A, bs.neighbor_b, pref)
 end
+
+# struct GridState
+#     position::GridPosition
+#     done::Bool # are we in a terminal state?
+#     goal_index::Int64 # This is the goal
+#     neighbor_A::Matrix # A*current_state - b <= 0
+#     neighbor_b::Array
+#     intention_index::Int64 # This is the index of the preferred neighbor
+# end
+
+# @with_kw struct GridBeliefState
+#     position::GridPosition
+#     done::Bool # are we in a terminal state?
+#     neighbor_A::Matrix # A*current_state - b <= 0
+#     neighbor_b::Array
+#     belief_intention::Matrix{Float64} # size #goals*(1+#neighbors)
+# end
+
+
+# G_h = loadgraph("maps/"*map_name*".mg", MGFormat())
+#
+# function Base.rand(rng::AbstractRNG, bs::GridBeliefState)
+#     # We need to _sample_ state instances from a belief state
+#
+#     # Just copy over position (observable)
+#     pos = bs.position
+#     done = bs.done
+#
+#     A, b = pos_to_neighbor_matrices(pos, G_h)
+#
+#     sum=0.0
+#     limit = rand(rng)
+#
+#     for goal in 1:length(bs.belief_intention[:,1])
+#         for pref in 1:length(bs.belief_intention[1,:])
+#             sum += bs.belief_intention[goal, pref]
+#             if sum >= limit
+#                 return GridState(pos, done, goal, A, b, pref)
+#             end
+#         end
+#     end
+#
+#     println("Wasn't able to sample a state!!!")
+#     return nothing
+#
+#     # # Sample a new goal from probabilities
+#     # goal_index = findfirst(cumsum(bs.belief_goals) .>= rand(rng))
+#     #
+#     # return GridState(pos, done, goal_index)
+# end
+
+
+
+
+
+
+
+
+
 
 POMDPs.actions(pomdp::MapWorld) = ['N', 'S', 'E', 'W', '0', '1', '2', '3']
 POMDPs.discount(pomdp::MapWorld) = pomdp.discount_factor
@@ -102,26 +162,38 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
     # Case where the new position is in a new set: transition penalty
     same_region = is_in_region(s.neighbor_A, s.neighbor_b, new_pos)
     if ~same_region
-        sequence = A*(-0.1 .+ pos)-b
-        transition_index = findfirst(.>(0),sequence)
+        sequence = s.neighbor_A*(-0.1 .+ new_pos)-s.neighbor_b
+        transition_index = findfirst(.>(0),sequence)[1]
 
         if transition_index != s.intention_index
-            r += incorrect_transition_penalty
+            r += p.incorrect_transition_penalty
         end
     end
 
     # If we changed region, A, b and the true preference must change
     if ~same_region
+        @show new_pos
         # find new A, b
         new_A, new_b = pos_to_neighbor_matrices(new_pos, p.hyperplane_graph)
+
+        @show new_A
+        @show new_b
+
         # find new preference
         new_node_index = pos_to_region_index(new_pos, p.hyperplane_graph)
-        new_pref_index = p.true_preference[new_node_index]
+        @show new_node_index
+
+        new_pref_index_global = p.true_preference[new_node_index]
+
+        @show new_pref_index_global
+
+        new_pref_index = get_local_pref_from_graph_pref_index(p.hyperplane_graph,
+                                          new_node_index, new_pref_index_global)
 
         new_state = GridState(new_pos, false, s.goal_index, new_A,
                               new_b, new_pref_index)
     else
-        new_state = GridState(new_pos, galse, s.goal_index, s.neighbor_A,
+        new_state = GridState(new_pos, false, s.goal_index, s.neighbor_A,
                               s.neighbor_b, s.intention_index)
     end
 

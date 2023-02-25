@@ -7,7 +7,7 @@ function map_occupancy_grid()
     OBSTACLE_MAP[5,6] = true
     OBSTACLE_MAP[6,5] = true
     OBSTACLE_MAP[6,6] = true
-    println("OBSTACLE MAP: ", OBSTACLE_MAP)
+    # println("OBSTACLE MAP: ", OBSTACLE_MAP)
     # OBSTACLE_MAP[1, 1] = false
     # OBSTACLE_MAP[1, 2] = false # Giving robot a way out hehe
     return OBSTACLE_MAP
@@ -55,7 +55,7 @@ function map_problem_setup()
     start_pos = GridPosition(1,1)
 
 
-    goal_options [GridPosition(x, 8) for x=1:10 if OBSTACLE_MAP[x,8] == false]
+    goal_options = [GridPosition(x, 8) for x=1:10 if OBSTACLE_MAP[x,8] == false]
     # true_goal = GridPosition(1, 8)
     true_goal_index = 1
 
@@ -77,6 +77,7 @@ function map_problem_setup()
     # M_pref[7,5] = 1
     # M_pref[8,7] = 1
     return start_pos, true_goal_index, goal_options, M_pref
+end
 
 # function write_hyperplane_graph_to_file(G::MetaGraph, graph_name::String)
 #     savegraph(graph_name, G)

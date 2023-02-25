@@ -46,7 +46,7 @@ function POMDPTools.render(pomdp::MapWorld, true_state::GridState, belief_state:
 
         # Vector pointing from robot to direction orthogonal to + towards Ax=b
         p1 = belief_state.position
-        p2 = belief_state.position + (0.5 + marginal_preference) .* (hyperplane_A[i,:] ./ sum(hyperplane_A[i,:])
+        p2 = belief_state.position + (0.5 + marginal_preference) .* (hyperplane_A[i,:] ./ sum(hyperplane_A[i,:]))
 
         myline = compose(context(), line([(p1[1]/nx, (ny-p1[2])/ny), (p2[1]/nx, (ny-p2[2])/ny)]), stroke(clr), linewidth(0.5mm))
 

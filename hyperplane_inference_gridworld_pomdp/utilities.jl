@@ -20,8 +20,11 @@ function is_in_region(A::Matrix, b::Vector, pos::GridPosition)
     return all(<=(0), sequence)
 end
 
-function pos_to_neighbor_matrices(pos::GridPosition, G::MetaGraph)
+function pos_to_neighbor_matrices(pos::GridPosition, G::MetaGraph;
+                             adjustment::Float64=0.1)
     """Returns matrices A and b corresponding to A*pos - b <= 0 on the graph."""
+
+    # @infiltrate
 
     for i in vertices(G)
         # Matrices that include the contour
@@ -29,23 +32,32 @@ function pos_to_neighbor_matrices(pos::GridPosition, G::MetaGraph)
         bc = get_prop(G, i, :b)
         contour_indices = get_prop(G, i, :contour_indices)
 
+        # println(Ac)
+        # println(bc)
 
-        sequence = Ac*[pos[1], pos[2]] - bc
+        sequence = Ac*[pos[1]-adjustment, pos[2]-adjustment] - bc
         # If all elements of A*pos-b are negative, we found the set
         if all(<=(0), sequence)
-            # Remove the contour from Ac and bc (no inference over boundaries)
-            A = nothing
-            b = nothing
-            for i in 1:length(bc)
-                if i ∉ contour_indices
-                    A = vcat(A, Ac[i,:])
-                    b = vcat(b, bc[i])
-                end
-            end
-            # (debug) remove nothing from beginning of lists?!
-            A = A[2:end,:]
-            b = b[2:end]
-            return A, b
+            # # Remove the contour from Ac and bc (no inference over boundaries)
+            # A = [nothing nothing]
+            # b = nothing
+            # for j in 1:length(bc)
+            #     if j ∉ contour_indices
+            #         A = vcat(A, transpose(Ac[j,:]))
+            #         b = vcat(b, bc[j])
+            #     end
+            # end
+            # # println("Done with for loop")
+            # # @show A
+            # # @show b
+            # # (debug) remove nothing from beginning of lists?!
+            # A = A[2:end,:]
+            # b = b[2:end]
+            #
+            # # @show A
+            # # @show b
+
+            return Ac, bc
         end
     end
 
@@ -62,8 +74,7 @@ function pos_to_region_index(pos::GridPosition, G::MetaGraph;
         # Matrices that include the contour
         Ac = get_prop(G, i, :A)
         bc = get_prop(G, i, :b)
-        contour_indices = get_prop(G, i, :contour_indices)
-
+        # contour_indices = get_prop(G, i, :contour_indices)
 
         sequence = Ac*[pos[1]-adjustment, pos[2]-adjustment] - bc
         # If all elements of A*pos-b are negative, we found the set

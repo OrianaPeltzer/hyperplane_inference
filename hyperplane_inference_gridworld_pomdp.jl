@@ -29,39 +29,39 @@ using Infiltrator
 
 
 
-using RobotOS
-@rosimport std_msgs.msg.Header
-@rosimport geometry_msgs.msg: Point
-@rosimport std_msgs.msg: Float64, Bool
-rostypegen()
-using .geometry_msgs.msg
-using .std_msgs.msg
+# using RobotOS
+# @rosimport std_msgs.msg.Header
+# @rosimport geometry_msgs.msg: Point
+# @rosimport std_msgs.msg: Float64, Bool
+# rostypegen()
+# using .geometry_msgs.msg
+# using .std_msgs.msg
 
 
 # ---------------- Experiment Parameters -----------------------
 # Map of the environment
 map_name = "2_10x10_squareobstacle_map"
 # Save directory
-save_dir = "~/SA_data/"*map_name*"/"
+save_dir = "/home/orianapeltzer/SA_data/"*map_name*"/"
 
 
 
 
 
 
-include("hyperplane_inference_gridworld/convex_sets.jl")
+include("hyperplane_inference_gridworld_pomdp/convex_sets.jl")
 map_dir = "maps/"*map_name*".jl"
 include(map_dir)
 
 # Grid world, map, pomdp and problem-specific functions
-include("hyperplane_inference_gridworld/world.jl")
-include("hyperplane_inference_gridworld/hyper_a_star.jl")
+include("hyperplane_inference_gridworld_pomdp/world.jl")
+include("hyperplane_inference_gridworld_pomdp/hyper_a_star.jl")
 # Helper functions for problem specifics
-include("hyperplane_inference_gridworld/utilities.jl")
+include("hyperplane_inference_gridworld_pomdp/utilities.jl")
 # POMCP-specific functions to solve the POMDP
-include("hyperplane_inference_gridworld/pomcp_functions.jl")
+include("hyperplane_inference_gridworld_pomdp/pomcp_functions.jl")
 # To visualize
-include("hyperplane_inference_gridworld/visualization.jl")
+include("hyperplane_inference_gridworld_pomdp/visualization.jl")
 
 # All the global variables (sorry!)
 global mapworld_pomdp
@@ -126,10 +126,10 @@ function initialize_map()
 
     # For visualization
     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    draw(SVGJS(save_directory*"foo.svg", 6inch, 6inch), c)
+    draw(SVGJS(save_dir*"foo.svg", 6inch, 6inch), c)
     # Ubuntu
-    loadurl(my_window, "file:///home/peltzer/SA_data/"*map_name*"/foo.svg")
-    # loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
+    # loadurl(my_window, "file:///home/orianapeltzer/SA_data/"*map_name*"/foo.svg")
+    # loadurl(my_window, "file:///home/orianapeltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
     # Windows
     # loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
 
@@ -137,9 +137,9 @@ function initialize_map()
 end
 
 # Main loop - is called each time an observation is received
-function iterate_pomcp(angle::Float64, solver; display=true, iteration=0)
+function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=true, iteration=0)
 
-    RNG = MersenneTwister(1234)
+
 
     println("Solver initialized.")
 
@@ -185,15 +185,17 @@ function iterate_pomcp(angle::Float64, solver; display=true, iteration=0)
     @show a
 
     # Generate new state (the observation is irrelevant)
-    # true_state, r, o = gen(mapworld_pomdp, true_state, a, RNG)
+    true_state, r, o = gen(mapworld_pomdp, true_state, a, RNG)
 
     curr_belstate = update_pose_belief(mapworld_pomdp, curr_belstate, a)
 
     println("done updating pose belief")
 
     # Update true state
-    true_state = GridState(curr_belstate.position, true_state.done, true_state.goal_index, true_state.neighbor_A, true_state.neighbor_b)
-    # @show r
+    # true_state = GridState(curr_belstate.position, true_state.done,
+    #                        true_state.goal_index, curr_belstate.neighbor_A,
+    #                        curr_belstate.neighbor_b, true_state.intention_index)
+    @show r
 
     @show curr_belstate
 
@@ -208,13 +210,14 @@ function iterate_pomcp(angle::Float64, solver; display=true, iteration=0)
         println("--------------------------")
         println("   Made it to the goal!!  ")
         println("--------------------------")
+        true_state.done = true
     end
 
     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
 
-    draw(SVGJS(save_dir*iteration*".svg", 6inch, 6inch), c)
+    draw(SVGJS(save_dir*string(iteration)*".svg", 6inch, 6inch), c)
     # Ubuntu
-    if display
+    if display_window
         loadurl(my_window, "file:///home/peltzer/SA_data/"*map_name*"/foo.svg")
     end
     # loadurl(my_window, "file:///home/peltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
@@ -235,11 +238,12 @@ function simulate_pomcp()
     global true_state
     global my_window
 
-    my_window = Window()
+    # my_window = Window()
 
     initialize_map()
     println("Map initialized!")
 
+    RNG = MersenneTwister(1234)
     solver = POMCPSolver(rng=RNG, max_depth=15, tree_queries = 100000)
 
     iteration = 0
@@ -249,11 +253,17 @@ function simulate_pomcp()
     while (~problem_terminated && iteration < max_iterations)
         iteration += 1
 
-        o = sample_human_action(mapworld_pomdp, true_state)
+        @show true_state
 
-        problem_terminated = iterate_pomcp(o, solver, display=false)
+        o = sample_human_action(mapworld_pomdp, true_state, RNG)
 
-        println("Finished iteration "*iteration)
+        println("Sampled new observation: ")
+        @show o
+
+        problem_terminated = iterate_pomcp(o, solver, RNG, display_window=false,
+                                           iteration=iteration)
+
+        println("Finished iteration "*string(iteration))
 
     end
 
@@ -264,35 +274,35 @@ function simulate_pomcp()
 end
 
 
-# ROS functions
-function callback(msg::Float64Msg, pub_obj::Publisher{BoolMsg})
-    angle = msg.data
-    println("angle received: ", angle)
-    iterate_pomcp(angle)
-    # pt_msg = Point(msg.x, msg.y, 0.0)
-    publish(pub_obj, BoolMsg(true))
-    println("Finished solving.")
-    return
-end
-
-
-function main_ros()
-
-    global my_window
-    my_window = Window()
-
-    init_node("pomcp_node")
-    pub = Publisher{BoolMsg}("solution", queue_size=10)
-    sub = Subscriber{Float64Msg}("input_angle", callback, (pub,), queue_size=10)
-    initialize_map()
-    println("Map initialized, waiting for input!")
-
-    # Send bool to game manager so that it gets ready to receive input
-    # publish(pub, BoolMsg(true))
-    # publish(pub, BoolMsg(true))
-
-    spin()
-end
+# # ROS functions
+# function callback(msg::Float64Msg, pub_obj::Publisher{BoolMsg})
+#     angle = msg.data
+#     println("angle received: ", angle)
+#     iterate_pomcp(angle)
+#     # pt_msg = Point(msg.x, msg.y, 0.0)
+#     publish(pub_obj, BoolMsg(true))
+#     println("Finished solving.")
+#     return
+# end
+#
+#
+# function main_ros()
+#
+#     global my_window
+#     my_window = Window()
+#
+#     init_node("pomcp_node")
+#     pub = Publisher{BoolMsg}("solution", queue_size=10)
+#     sub = Subscriber{Float64Msg}("input_angle", callback, (pub,), queue_size=10)
+#     initialize_map()
+#     println("Map initialized, waiting for input!")
+#
+#     # Send bool to game manager so that it gets ready to receive input
+#     # publish(pub, BoolMsg(true))
+#     # publish(pub, BoolMsg(true))
+#
+#     spin()
+# end
 
 
 if ! isinteractive()

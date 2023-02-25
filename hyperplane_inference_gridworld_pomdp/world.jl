@@ -59,24 +59,26 @@ function angle_to_heading(angle::Float64)
     end
 end
 
-function heading_to_angle(heading::Char)
+function heading_to_angle(a::Char)
+
+    float_pi = 3.141592653589793
 
     if a == 'W'
-        return pi
+        return float_pi
     elseif a == 'E'
         return 0.0
     elseif a == 'S'
-        return -pi/2
+        return -float_pi/2
     elseif a == 'N'
-        return pi/2
+        return float_pi/2
     elseif a == '0' # SW
-        return -3*pi/4
+        return -3*float_pi/4
     elseif a == '2' # NW
-        return 3*pi/4
+        return 3*float_pi/4
     elseif a == '1' # SE
-        return -pi/4
+        return -float_pi/4
     elseif a == '3' # NE
-        return pi/4
+        return float_pi/4
     else
         println("Invalid heading!!!!!!!!")
         return None
@@ -176,7 +178,20 @@ function initial_state(pomdp::MapWorld)
 
     i = pos_to_region_index(start_state, pomdp.hyperplane_graph)
 
-    start_pref_index = pomdp.true_preference[i]
+    start_pref_index = get_edge_number_from_graph_pref_index(pomdp.hyperplane_graph, i, pomdp.true_preference[i])
+
+    # start_pref_vertex_index = pomdp.true_preference[i]
+    #
+    # #### Need to find what index of start_A and start_b this true_pref correponds to!
+    # # For this, use the graph mapping
+    # reduced_index_to_graph_mapping = get_prop(pomdp.hyperplane_graph,
+    #                                           start_pref_vertex_index,
+    #                                           :mapping)
+    # for (reduced_idx, graph_idx) in reduced_index_to_graph_mapping
+    #     if graph_idx==start_pref_vertex_index
+    #         start_pref_index = reduced_idx
+    #     end
+    # end
 
     return GridState(start_state, false, pomdp.true_goal_index,
                      start_A, start_b, start_pref_index)
@@ -186,17 +201,21 @@ end
 
 function initialize_prior_belief(p::MapWorld,pos::GridPosition,A::Matrix,b::Vector)
     # Uniform prior on which goal is the intended one
-    belief_intention = zeros(p.n_possible_goals, 1+length(b))
+    G = p.hyperplane_graph
+    vtx_id = pos_to_region_index(pos, G)
+
+    num_neighbors = length(get_prop(G,vtx_id,:pref_neighbors))
+    belief_intention = zeros(p.n_possible_goals, 1+num_neighbors)
 
     # Construct prior belief for each goal
     for (g_idx, goal) in enumerate(p.goal_options)
         # rows where the goal belong to the region ([0.0, 0.0, 1/N])
         if is_in_region(A, b, goal)
-            belief_intention[g_idx, length(b)+1] = 1.0/p.n_possible_goals
+            belief_intention[g_idx, num_neighbors+1] = 1.0/p.n_possible_goals
         # rows where the goal is outside
         else
             shortest_path_distance = get_shortest_path_length(p, pos, goal)
-            for pref=1:length(b)
+            for pref=1:num_neighbors
                 # Previous version: shortest path calculation to get p(theta|g).
                 # pos_index = p.K_map[pos[1], pos[2]]
                 # goal_index = p.K_map[goal[1], goal[2]]
@@ -223,8 +242,13 @@ end
 function reshape_prior_belief(p::MapWorld,pos::GridPosition,new_pos::GridPosition, A::Matrix,b::Vector, bel::GridBeliefState)
     """A and b are the matrices corresponding to the new position."""
 
+    G = p.hyperplane_graph
+    old_vtx_id = pos_to_region_index(pos, G)
+    new_vtx_id = pos_to_region_index(new_pos, G)
+    new_num_neighbors = length(get_prop(G,new_vtx_id,:pref_neighbors))
+
     # Initialize new belief
-    belief_intention = zeros(p.n_possible_goals, 1+length(b))
+    belief_intention = zeros(p.n_possible_goals, 1+new_num_neighbors)
 
     # Collect marginals over goal
     marginals = sum(bel.belief_intention, dims=2)
@@ -232,35 +256,49 @@ function reshape_prior_belief(p::MapWorld,pos::GridPosition,new_pos::GridPositio
     # Find the probabilities of doing the transition that it actually did
     sequence = A*(-0.1 .+ pos)-b
     transition_index = findfirst(.>(0),sequence)
-    p_trans = bel.belief_intention[:,transition_index]
+
+    # Find the index of the edge it just transitioned to
+    transition_edge_number = get_edge_number_from_index_in_A(G, old_vtx_id, transition_index)
+
+    p_trans = bel.belief_intention[:,transition_edge_number]
 
 
     # Construct prior belief for each goal
     for (g_idx, goal) in enumerate(p.goal_options)
         if is_in_region(A, b, goal)
-            belief_intention[g_idx, length(b)+1] = marginals[g_idx]#1.0/p.n_possible_goals
+            belief_intention[g_idx, new_num_neighbors+1] = marginals[g_idx]#1.0/p.n_possible_goals
         else
-            shortest_path_distance = get_shortest_path_length(p, new_pos, goal)
-            for pref=1:length(b)
+            # shortest_path_distance = get_shortest_path_length(p, new_pos, goal)
+            for pref=1:new_num_neighbors
+
+                # Get the neighbor that this corresponds to (with edge number pref)
+                pref_neighbor = get_pref_from_edge_number(G, new_vtx_id, pref)
 
                 # Uniform prior
                 belief_intention[g_idx,pref] = 1.0#exp(-0.1*diff)
 
                 # If the preference corresponds to where we come from, use prior
-                if sequence[pref] > 0
+                if pref_neighbor.neighbor_vertex_id == old_vtx_id
                     belief_intention[g_idx,pref] = 1.0 - p_trans[g_idx]
                 end
 
+                # if sequence[pref] > 0
+                #     belief_intention[g_idx,pref] = 1.0 - p_trans[g_idx]
+                # end
+
                 # This shouldn't happen
-                if is_obstacle_index(new_pos,pref)
+                # if is_obstacle_index(new_pos,pref)
+                if pos_to_region_index(new_pos, G) == -1 # If infeasible new pos
                     println("Robot moved inside an obstacle?")
+                    @show new_pos
+                    @show pref
                     belief_intention[g_idx,pref] = 0.0
                 end
 
                 # Is there a valid path to the goal going through the new pref?
                 pos_index = p.K_map[new_pos[1], new_pos[2]]
                 goal_index = p.K_map[goal[1], goal[2]]
-                preference_constraint = NeighborConstraint(A,b,pref,true)
+                preference_constraint = NeighborConstraint(A,b,pref_neighbor.idx_in_A,true)
                 shortest_path_constrained = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
                 # If pref leads to nowhere, set belief to 0.
                 if length(shortest_path_constrained) == 0
@@ -274,28 +312,28 @@ function reshape_prior_belief(p::MapWorld,pos::GridPosition,new_pos::GridPositio
     return belief_intention
 end
 
-"""Sample a preferred neighbor from a weighted prior distribution"""
-function sample_preference(p::MapWorld, pos::GridPosition,goal::GridPosition,A::Matrix,b::Vector)
-    intention_distribution = zeros(length(b))
-
-    shortest_path_distance = get_shortest_path_length(p, pos, goal)
-    for pref=1:length(b)
-        pos_index = p.K_map[pos[1], pos[2]]
-        goal_index = p.K_map[goal[1], goal[2]]
-
-        preference_constraint = NeighborConstraint(A,b,pref,true)
-        shortest_path_constrained = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
-        constrained_dist = traversal_time(shortest_path_constrained, p.map_graph)
-
-        diff = constrained_dist - shortest_path_distance
-        intention_distribution[pref] = exp(-p.BII_gamma*diff)
-    end
-    # normalize prior
-    intention_distribution = intention_distribution / sum(intention_distribution)
-
-    # Sample from weighted prior
-    return sample(1:length(b), Weights(intention_distribution))
-end
+# """Sample a preferred neighbor from a weighted prior distribution"""
+# function sample_preference(p::MapWorld, pos::GridPosition,goal::GridPosition,A::Matrix,b::Vector)
+#     intention_distribution = zeros(length(b))
+#
+#     shortest_path_distance = get_shortest_path_length(p, pos, goal)
+#     for pref=1:length(b)
+#         pos_index = p.K_map[pos[1], pos[2]]
+#         goal_index = p.K_map[goal[1], goal[2]]
+#
+#         preference_constraint = NeighborConstraint(A,b,pref,true)
+#         shortest_path_constrained = Graphs.a_star(p.map_graph, pos_index, goal_index, preference_constraint, p.dist_matrix_DP)
+#         constrained_dist = traversal_time(shortest_path_constrained, p.map_graph)
+#
+#         diff = constrained_dist - shortest_path_distance
+#         intention_distribution[pref] = exp(-p.BII_gamma*diff)
+#     end
+#     # normalize prior
+#     intention_distribution = intention_distribution / sum(intention_distribution)
+#
+#     # Sample from weighted prior
+#     return sample(1:length(b), Weights(intention_distribution))
+# end
 
 # """(Problem Specific) Sample a human input from the robot position and true intended goal"""
 # function sample_direction(p::GridPosition, g::GridPosition, h_std::Float64)
@@ -316,6 +354,35 @@ end
 #     return rand(Normal(exact_direction,h_std))
 # end
 
+# struct GridState
+#     position::GridPosition
+#     done::Bool # are we in a terminal state?
+#     goal_index::Int64 # This is the goal
+#     neighbor_A::Matrix # A*current_state - b <= 0
+#     neighbor_b::Array
+#     intention_index::Int64 # This is the index of the preferred neighbor
+# end
+
+function sample_human_action(p::MapWorld, s::GridState, rng::AbstractRNG)
+    actions = ['N', 'S', 'E', 'W', '0', '1', '2', '3']
+    measurement_likelihoods = fill(0.0,length(actions))
+    goal_in_region = is_in_region(s.neighbor_A, s.neighbor_b, s.position)
+    for (i,a) in enumerate(actions)
+        if goal_in_region
+            measurement_likelihoods[i] = compute_measurement_likelihood(p,s.position,p.goal_options[p.true_goal_index],a)
+        else
+            measurement_likelihoods[i] = compute_measurement_likelihood(p,
+                                 s.position,
+                                 p.goal_options[p.true_goal_index],
+                                 a,
+                                 s.neighbor_A, s.neighbor_b, s.intention_index)
+        end
+    end
+    measurement_likelihoods = measurement_likelihoods ./ sum(measurement_likelihoods)
+    action_index = findfirst(cumsum(measurement_likelihoods) .>= rand(rng))
+    heading = actions[action_index]
+    return heading_to_angle(heading)
+end
 
 
 function compute_measurement_likelihood(p::MapWorld, pos::GridPosition, goal::GridPosition, heading::Char)
@@ -348,9 +415,16 @@ function compute_measurement_likelihood(p::MapWorld, pos::GridPosition,
 
     # 1. Set up preference constraint and get delta(pos->goal|preference) -----
 
+    # Preference index is the edge number. To turn that in a constraint,
+    # get the corresponding index in A that should be flipped.
+
+    G = p.hyperplane_graph
+    v_idx = pos_to_region_index(pos, G)
+    pref = get_pref_from_edge_number(G, v_idx, preference_index)
+
     # Create preference constraint
     preference_constraint = NeighborConstraint(neighbor_A,neighbor_b,
-                                               preference_index,true)
+                                               pref.idx_in_A,true)
 
     # Get vertex indices on the mapgraph corresponding to current pos and goal
     pos_index = p.K_map[pos[1], pos[2]]
