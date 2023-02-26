@@ -82,129 +82,129 @@ function pos_to_region_index(pos::GridPosition, G::MetaGraph;
             return i
         end
     end
-    println("Did not find region of the graph corresponding to color!")
+    println("Did not find region of the graph corresponding to pos!")
     return -1
 end
 
-function pos_to_neighbor_matrices_no_obs(pos::GridPosition)
-    """Hand-made for the moment. Joe's method should go in here.
-    Returns A and b corresponding to the robot's current location and the
-    neighboring regions. Ax-b <= 0 indicates that the robot is inside.
-
-    Current: obstacle at (5,5) to (6,6), size 2x2
-    """
-    # Rectangular obstacle limits
-    Lx = 5
-    Ly = 5
-    Ux = 6
-    Uy = 6
-
-    lowerleftA = [1 0
-                  0 1]
-    lowerleftb = [Lx-1,Ly-1]
-
-    leftA = [1 0
-             0 -1]
-    leftb = [Lx-1,-Ly]
-
-    upperleftA = [1 0
-                  0 -1]
-    upperleftb = [Lx-1, -Uy-1]
-
-    upA = [1 0
-           -1 0]
-    upb = [Ux, -Lx]
-
-    upperrightA = [-1 0
-                   0 -1]
-    upperrightb = [-Ux-1, -Uy-1]
-
-    rightA = [0 1
-              0 -1]
-    rightb = [Uy, -Ly]
-
-    lowerrightA = [-1 0
-                   0 1]
-    lowerrightb = [-Ux-1, Ly-1]
-
-    lowA = [1 0
-            -1 0]
-    lowb = [Ux, -Lx]
-
-    As = [lowerleftA, leftA, upperleftA, upA, upperrightA, rightA, lowerrightA, lowA]
-    bs = [lowerleftb, leftb, upperleftb, upb, upperrightb, rightb, lowerrightb, lowb]
-
-    for i=1:8
-        sequence = As[i]*[pos[1], pos[2]] - bs[i]
-        if all(<=(0), sequence)
-            return As[i], bs[i]
-        end
-    end
-
-    return [], []
-end
-
-function pos_to_neighbor_matrices(pos::GridPosition)
-    """Hand-made for the moment. Joe's method should go in here.
-    Returns A and b corresponding to the robot's current location and the
-    neighboring regions. Ax-b <= 0 indicates that the robot is inside.
-
-    Current: obstacle at (5,5) to (6,6), size 2x2
-    """
-    # Rectangular obstacle limits
-    Lx = 5
-    Ly = 5
-    Ux = 6
-    Uy = 6
-
-    lowerleftA = [1 0
-                  0 1]
-    lowerleftb = [Lx-1,Ly-1]
-
-    leftA = [1 0
-             0 1
-             0 -1]
-    leftb = [Lx-1,Uy,-Ly]
-
-    upperleftA = [1 0
-                  0 -1]
-    upperleftb = [Lx-1, -Uy-1]
-
-    upA = [1 0
-           -1 0
-           0 -1]
-    upb = [Ux, -Lx, -Uy-1]
-
-    upperrightA = [-1 0
-                   0 -1]
-    upperrightb = [-Ux-1, -Uy-1]
-
-    rightA = [-1 0
-              0 1
-              0 -1]
-    rightb = [-Ux-1, Uy, -Ly]
-
-    lowerrightA = [-1 0
-                   0 1]
-    lowerrightb = [-Ux-1, Ly-1]
-
-    lowA = [1 0
-            -1 0
-            0 1]
-    lowb = [Ux, -Lx, Ly-1]
-
-    As = [lowerleftA, leftA, upperleftA, upA, upperrightA, rightA, lowerrightA, lowA]
-    bs = [lowerleftb, leftb, upperleftb, upb, upperrightb, rightb, lowerrightb, lowb]
-
-    for i=1:8
-        sequence = As[i]*[pos[1], pos[2]] - bs[i]
-        if all(<=(0), sequence)
-            return As[i], bs[i]
-        end
-    end
-
-    return [], []
-end
+# function pos_to_neighbor_matrices_no_obs(pos::GridPosition)
+#     """Hand-made for the moment. Joe's method should go in here.
+#     Returns A and b corresponding to the robot's current location and the
+#     neighboring regions. Ax-b <= 0 indicates that the robot is inside.
+#
+#     Current: obstacle at (5,5) to (6,6), size 2x2
+#     """
+#     # Rectangular obstacle limits
+#     Lx = 5
+#     Ly = 5
+#     Ux = 6
+#     Uy = 6
+#
+#     lowerleftA = [1 0
+#                   0 1]
+#     lowerleftb = [Lx-1,Ly-1]
+#
+#     leftA = [1 0
+#              0 -1]
+#     leftb = [Lx-1,-Ly]
+#
+#     upperleftA = [1 0
+#                   0 -1]
+#     upperleftb = [Lx-1, -Uy-1]
+#
+#     upA = [1 0
+#            -1 0]
+#     upb = [Ux, -Lx]
+#
+#     upperrightA = [-1 0
+#                    0 -1]
+#     upperrightb = [-Ux-1, -Uy-1]
+#
+#     rightA = [0 1
+#               0 -1]
+#     rightb = [Uy, -Ly]
+#
+#     lowerrightA = [-1 0
+#                    0 1]
+#     lowerrightb = [-Ux-1, Ly-1]
+#
+#     lowA = [1 0
+#             -1 0]
+#     lowb = [Ux, -Lx]
+#
+#     As = [lowerleftA, leftA, upperleftA, upA, upperrightA, rightA, lowerrightA, lowA]
+#     bs = [lowerleftb, leftb, upperleftb, upb, upperrightb, rightb, lowerrightb, lowb]
+#
+#     for i=1:8
+#         sequence = As[i]*[pos[1], pos[2]] - bs[i]
+#         if all(<=(0), sequence)
+#             return As[i], bs[i]
+#         end
+#     end
+#
+#     return [], []
+# end
+#
+# function pos_to_neighbor_matrices(pos::GridPosition)
+#     """Hand-made for the moment. Joe's method should go in here.
+#     Returns A and b corresponding to the robot's current location and the
+#     neighboring regions. Ax-b <= 0 indicates that the robot is inside.
+#
+#     Current: obstacle at (5,5) to (6,6), size 2x2
+#     """
+#     # Rectangular obstacle limits
+#     Lx = 5
+#     Ly = 5
+#     Ux = 6
+#     Uy = 6
+#
+#     lowerleftA = [1 0
+#                   0 1]
+#     lowerleftb = [Lx-1,Ly-1]
+#
+#     leftA = [1 0
+#              0 1
+#              0 -1]
+#     leftb = [Lx-1,Uy,-Ly]
+#
+#     upperleftA = [1 0
+#                   0 -1]
+#     upperleftb = [Lx-1, -Uy-1]
+#
+#     upA = [1 0
+#            -1 0
+#            0 -1]
+#     upb = [Ux, -Lx, -Uy-1]
+#
+#     upperrightA = [-1 0
+#                    0 -1]
+#     upperrightb = [-Ux-1, -Uy-1]
+#
+#     rightA = [-1 0
+#               0 1
+#               0 -1]
+#     rightb = [-Ux-1, Uy, -Ly]
+#
+#     lowerrightA = [-1 0
+#                    0 1]
+#     lowerrightb = [-Ux-1, Ly-1]
+#
+#     lowA = [1 0
+#             -1 0
+#             0 1]
+#     lowb = [Ux, -Lx, Ly-1]
+#
+#     As = [lowerleftA, leftA, upperleftA, upA, upperrightA, rightA, lowerrightA, lowA]
+#     bs = [lowerleftb, leftb, upperleftb, upb, upperrightb, rightb, lowerrightb, lowb]
+#
+#     for i=1:8
+#         sequence = As[i]*[pos[1], pos[2]] - bs[i]
+#         if all(<=(0), sequence)
+#             return As[i], bs[i]
+#         end
+#     end
+#
+#     return [], []
+# end
 
 function pos_to_lines(pos::GridPosition)
 

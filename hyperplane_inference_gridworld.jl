@@ -78,7 +78,7 @@ function initialize_map()
     # OBSTACLE_MAP[1, 1] = false
     # OBSTACLE_MAP[1, 2] = false # Giving robot a way out hehe
 
-    BII_gamma=0.9
+    BII_gamma=1.5
 
     map_graph, K_map = initialize_grid_graph(OBSTACLE_MAP)
 

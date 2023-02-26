@@ -106,12 +106,14 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
 
     curr_pos = s.position
 
+    G = p.hyperplane_graph
+    curr_v_idx = pos_to_region_index(curr_pos, G)
+
     goal = p.goal_options[s.goal_index]
 
     # We suppose the human won't give any more observations
     o = HumanInputObservation(0.0,false,false)
 
-    pref = s.intention_index
 
     # Get reward if we reached the goal, otherwise get penalty
     if curr_pos == goal
@@ -158,37 +160,85 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
         r = p.penalty # If we failed to do a diagonal mvt, set the penalty back
     end
 
+    # If the new state is the goal, also get reward straight away
+    if new_pos == goal
+        r = p.reward
+        new_state = GridState(new_pos, true, s.goal_index, s.neighbor_A,
+                              s.neighbor_b, s.intention_index)
+        return (sp=new_state,r=r,o=o)
+    end
 
-    # Case where the new position is in a new set: transition penalty
+    # The robot is also not allowed to cut through polytope corners
     same_region = is_in_region(s.neighbor_A, s.neighbor_b, new_pos)
     if ~same_region
         sequence = s.neighbor_A*(-0.1 .+ new_pos)-s.neighbor_b
-        transition_index = findfirst(.>(0),sequence)[1]
+        # @show s.neighbor_A
+        # @show s.neighbor_b
+        # @show new_pos
+        # @show sequence
+        transition_A_index = findfirst(.>(0),sequence)[1]
 
-        if transition_index != s.intention_index
+        pref_neighbors = get_prop(G, curr_v_idx, :pref_neighbors)
+        admissible_A_transition_indices = [pn.idx_in_A for pn in pref_neighbors]
+
+        if ~(transition_A_index in admissible_A_transition_indices)
+            new_pos = curr_pos
+            same_region = true
+            r = p.penalty # If we failed to do a diagonal mvt, set the penalty back
+        end
+    end
+
+
+    # Case where the new position is in a new set: transition penalty
+    if ~same_region
+        sequence = s.neighbor_A*(-0.1 .+ new_pos)-s.neighbor_b
+
+        # @show s.neighbor_A
+        # @show s.neighbor_b
+        # @show new_pos
+        # @show sequence
+
+        transition_A_index = findfirst(.>(0),sequence)[1]
+
+        # if curr_v_idx==3 && transition_A_index==1
+        #     @show curr_pos
+        #     @show new_pos
+        # end
+
+        transition_edge_num = get_edge_number_from_index_in_A(G, curr_v_idx, transition_A_index)
+
+
+        if transition_edge_num != s.intention_index
             r += p.incorrect_transition_penalty
+        else
+            r += p.correct_transition_reward
         end
     end
 
     # If we changed region, A, b and the true preference must change
     if ~same_region
-        @show new_pos
+        # @show new_pos
         # find new A, b
         new_A, new_b = pos_to_neighbor_matrices(new_pos, p.hyperplane_graph)
 
-        @show new_A
-        @show new_b
+        # @show new_A
+        # @show new_b
 
         # find new preference
         new_node_index = pos_to_region_index(new_pos, p.hyperplane_graph)
-        @show new_node_index
+        # @show new_node_index
 
         new_pref_index_global = p.true_preference[new_node_index]
+        # @show new_pref_index_global
 
-        @show new_pref_index_global
+        if new_pref_index_global == -1 # means the goal is in the region
+            num_admissible_neighbors = length(get_prop(G,new_node_index,:pref_neighbors))
+            new_pref_index = num_admissible_neighbors + 1
+        else
+            new_pref_index = get_edge_number_from_graph_pref_index(G,
+                                              new_node_index, new_pref_index_global)
+        end
 
-        new_pref_index = get_local_pref_from_graph_pref_index(p.hyperplane_graph,
-                                          new_node_index, new_pref_index_global)
 
         new_state = GridState(new_pos, false, s.goal_index, new_A,
                               new_b, new_pref_index)
@@ -322,21 +372,23 @@ function update_goal_belief(pomdp::MapWorld, b::GridBeliefState, o::HumanInputOb
         #     return GridBeliefState(pos, done, prior_belief.neighbor_A, prior_belief.neighbor_b, new_belief_intentions)
         # end
 
+        n_goals, n_prefs = size(prior_belief.belief_intention)
 
-        measurement_likelihoods = zeros(pomdp.n_possible_goals, length(prior_belief.neighbor_b)+1)
+        measurement_likelihoods = fill(0.0, n_goals, n_prefs)
+        #zeros(pomdp.n_possible_goals, length(prior_belief.neighbor_b)+1)
 
         # Go through all goals and update one by one
-        for goal_id=1:pomdp.n_possible_goals
+        for goal_id=1:n_goals
 
             goal = pomdp.goal_options[goal_id]
 
             if is_in_region(prior_belief.neighbor_A, prior_belief.neighbor_b, goal)
 
                 # update measurement likelihood with no constraints (previous method)
-                measurement_likelihoods[goal_id,length(prior_belief.neighbor_b)+1] = compute_measurement_likelihood(pomdp,pos,goal,o.heading)
+                measurement_likelihoods[goal_id,n_prefs] = compute_measurement_likelihood(pomdp,pos,goal,o.heading)
             else
                 # use preference constraints
-                for pref=1:length(prior_belief.neighbor_b)
+                for pref=1:(n_prefs-1) # don't include last elt
                     measurement_likelihoods[goal_id,pref] = compute_measurement_likelihood(pomdp,pos,goal,o.heading, prior_belief.neighbor_A, prior_belief.neighbor_b, pref)
                 end
             end

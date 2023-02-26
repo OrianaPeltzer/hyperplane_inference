@@ -91,11 +91,12 @@ end
 @with_kw struct MapWorld <: POMDPs.POMDP{GridState,Char,HumanInputObservation}
     obstacle_map::Matrix{Bool}        = fill(false, 10, 10)
     grid_side::Int64                  = 10
-    discount_factor::Float64          = 0.9
+    discount_factor::Float64          = 0.95
     penalty::Float64                  = -1.0
     diag_penalty::Float64             = -1.414 # sqrt(2)
     incorrect_transition_penalty::Float64 = -3.0
-    reward::Float64                   = 10.0
+    correct_transition_reward::Float64 = 3.0
+    reward::Float64                   = 40.0
     new_obs_weight::Float64           = 0.75
     goal_options::Array{GridPosition} = [GridPosition(7, 7),
                                          GridPosition(1, 8)]
@@ -178,7 +179,14 @@ function initial_state(pomdp::MapWorld)
 
     i = pos_to_region_index(start_state, pomdp.hyperplane_graph)
 
-    start_pref_index = get_edge_number_from_graph_pref_index(pomdp.hyperplane_graph, i, pomdp.true_preference[i])
+    global_pref = pomdp.true_preference[i]
+
+    if global_pref == -1 # means the goal is in the region
+        num_admissible_neighbors = length(get_prop(G,i,:pref_neighbors))
+        start_pref_index = num_admissible_neighbors + 1
+    else
+        start_pref_index = get_edge_number_from_graph_pref_index(pomdp.hyperplane_graph, i, global_pref)
+    end
 
     # start_pref_vertex_index = pomdp.true_preference[i]
     #
@@ -247,6 +255,9 @@ function reshape_prior_belief(p::MapWorld,pos::GridPosition,new_pos::GridPositio
     new_vtx_id = pos_to_region_index(new_pos, G)
     new_num_neighbors = length(get_prop(G,new_vtx_id,:pref_neighbors))
 
+    old_A = get_prop(G,old_vtx_id,:A)
+    old_b = get_prop(G,old_vtx_id,:b)
+
     # Initialize new belief
     belief_intention = zeros(p.n_possible_goals, 1+new_num_neighbors)
 
@@ -254,7 +265,7 @@ function reshape_prior_belief(p::MapWorld,pos::GridPosition,new_pos::GridPositio
     marginals = sum(bel.belief_intention, dims=2)
 
     # Find the probabilities of doing the transition that it actually did
-    sequence = A*(-0.1 .+ pos)-b
+    sequence = old_A*(-0.1 .+ new_pos)-old_b
     transition_index = findfirst(.>(0),sequence)
 
     # Find the index of the edge it just transitioned to
@@ -366,7 +377,7 @@ end
 function sample_human_action(p::MapWorld, s::GridState, rng::AbstractRNG)
     actions = ['N', 'S', 'E', 'W', '0', '1', '2', '3']
     measurement_likelihoods = fill(0.0,length(actions))
-    goal_in_region = is_in_region(s.neighbor_A, s.neighbor_b, s.position)
+    goal_in_region = is_in_region(s.neighbor_A, s.neighbor_b, p.goal_options[p.true_goal_index])
     for (i,a) in enumerate(actions)
         if goal_in_region
             measurement_likelihoods[i] = compute_measurement_likelihood(p,s.position,p.goal_options[p.true_goal_index],a)
@@ -495,29 +506,67 @@ function update_position(p::MapWorld, pos::GridPosition, a::Char)
 
     curr_pos = pos
 
-    if a == 'W'
+    if a == 'S'
         new_pos = GridPosition(max(1, curr_pos[1]-1), curr_pos[2])
-    elseif a == 'E'
-        new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), curr_pos[2])
-    elseif a == 'S'
-        new_pos = GridPosition(curr_pos[1], max(1, curr_pos[2]-1))
     elseif a == 'N'
+        new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), curr_pos[2])
+    elseif a == 'W'
+        new_pos = GridPosition(curr_pos[1], max(1, curr_pos[2]-1))
+    elseif a == 'E'
         new_pos = GridPosition(curr_pos[1], min(p.grid_side, curr_pos[2]+1))
-    elseif a == '0' # SW
+    elseif a == '0'
         new_pos = GridPosition(max(1, curr_pos[1]-1), max(1, curr_pos[2]-1))
-    elseif a == '2' # NW
+    elseif a == '1'
         new_pos = GridPosition(max(1, curr_pos[1]-1), min(p.grid_side, curr_pos[2]+1))
-    elseif a == '1' # SE
+    elseif a == '2'
         new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), max(1, curr_pos[2]-1))
-    elseif a == '3' # NE
+    elseif a == '3'
         new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), min(p.grid_side, curr_pos[2]+1))
     else
         new_pos = curr_pos
     end
 
+    # if a == 'W'
+    #     new_pos = GridPosition(max(1, curr_pos[1]-1), curr_pos[2])
+    # elseif a == 'E'
+    #     new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), curr_pos[2])
+    # elseif a == 'S'
+    #     new_pos = GridPosition(curr_pos[1], max(1, curr_pos[2]-1))
+    # elseif a == 'N'
+    #     new_pos = GridPosition(curr_pos[1], min(p.grid_side, curr_pos[2]+1))
+    # elseif a == '0' # SW
+    #     new_pos = GridPosition(max(1, curr_pos[1]-1), max(1, curr_pos[2]-1))
+    # elseif a == '2' # NW
+    #     new_pos = GridPosition(max(1, curr_pos[1]-1), min(p.grid_side, curr_pos[2]+1))
+    # elseif a == '1' # SE
+    #     new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), max(1, curr_pos[2]-1))
+    # elseif a == '3' # NE
+    #     new_pos = GridPosition(min(p.grid_side, curr_pos[1]+1), min(p.grid_side, curr_pos[2]+1))
+    # else
+    #     new_pos = curr_pos
+    # end
+
     # If we hit an obstacle, we don't actually get to move
     if p.obstacle_map[new_pos...] == true
         new_pos = curr_pos
+    end
+
+    # The robot is also not allowed to cut through polytope corners
+    G = p.hyperplane_graph
+    curr_v_idx = curr_v_idx = pos_to_region_index(pos, G)
+    A = get_prop(G,curr_v_idx,:A)
+    b = get_prop(G,curr_v_idx,:b)
+    same_region = is_in_region(A, b, new_pos)
+    if ~same_region
+        sequence = A*(-0.1 .+ new_pos)-b
+        transition_A_index = findfirst(.>(0),sequence)[1]
+
+        pref_neighbors = get_prop(G, curr_v_idx, :pref_neighbors)
+        admissible_A_transition_indices = [pn.idx_in_A for pn in pref_neighbors]
+
+        if ~(transition_A_index in admissible_A_transition_indices)
+            new_pos = curr_pos
+        end
     end
 
     return new_pos

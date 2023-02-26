@@ -85,7 +85,7 @@ function initialize_map()
     grid_side = 10
     OBSTACLE_MAP = map_occupancy_grid()
 
-    BII_gamma=0.9
+    BII_gamma=1.5
 
     map_graph, K_map = initialize_grid_graph(OBSTACLE_MAP)
 
@@ -140,9 +140,6 @@ end
 function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=true, iteration=0)
 
 
-
-    println("Solver initialized.")
-
     global mapworld_pomdp
     global curr_belstate
     global true_state
@@ -155,6 +152,7 @@ function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=
 
     # If we are at the goal, return
     if curr_pos == goal
+        println("Already made it to goal!!")
         return
     end
 
@@ -169,8 +167,8 @@ function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=
     # Update the belief state. The action is irrelevant.
     curr_belstate = update_goal_belief(mapworld_pomdp, curr_belstate, o)
 
-    # println("Belief after goal update")
-    # @show curr_belstate
+    println("Belief after goal update")
+    @show curr_belstate
 
     println("Finished updating goal belief")
 
@@ -195,8 +193,12 @@ function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=
     # true_state = GridState(curr_belstate.position, true_state.done,
     #                        true_state.goal_index, curr_belstate.neighbor_A,
     #                        curr_belstate.neighbor_b, true_state.intention_index)
+    println("Reward:")
     @show r
+    println("New true state:")
+    @show true_state
 
+    println("New belief state:")
     @show curr_belstate
 
     display(curr_belstate.belief_intention)
@@ -244,16 +246,23 @@ function simulate_pomcp()
     println("Map initialized!")
 
     RNG = MersenneTwister(1234)
-    solver = POMCPSolver(rng=RNG, max_depth=15, tree_queries = 100000)
+    solver = POMCPSolver(rng=RNG, max_depth=30, tree_queries = 100000)
 
-    iteration = 0
-    max_iterations = 30
+    iteration = 1
+    max_iterations = 31
     problem_terminated = false
 
     while (~problem_terminated && iteration < max_iterations)
-        iteration += 1
 
-        @show true_state
+        println("")
+        println("")
+        println("Starting iteration "*string(iteration))
+
+
+        solver = POMCPSolver(rng=RNG, max_depth=31-iteration, tree_queries = 100000)
+
+        @show true_state.position
+        @show curr_belstate.position
 
         o = sample_human_action(mapworld_pomdp, true_state, RNG)
 
@@ -264,6 +273,7 @@ function simulate_pomcp()
                                            iteration=iteration)
 
         println("Finished iteration "*string(iteration))
+        iteration += 1
 
     end
 

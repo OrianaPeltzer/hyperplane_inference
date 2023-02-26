@@ -100,10 +100,10 @@ function get_idx_in_A_from_graph_pref_index(G::MetaGraph, v_idx::Int64, graph_pr
     """Gets the index in the local graph relevant to v_idx of the preference corresponding to
     a transition to neighbor with global vertex id graph_pref."""
 
-    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+    neighbors_of_v = get_prop(G,v_idx,:pref_neighbors)
 
     for n in neighbors_of_v
-        if n.neighbor_vertex_id == graph_pref_vtx_index
+        if n.neighbor_vertex_id == graph_pref_vtx_id
             return n.idx_in_A
         end
     end
@@ -118,10 +118,10 @@ function get_edge_number_from_graph_pref_index(G::MetaGraph, v_idx::Int64, graph
     """Gets the index in the local graph relevant to v_idx of the preference corresponding to
     a transition to neighbor with global vertex id graph_pref."""
 
-    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+    neighbors_of_v = get_prop(G,v_idx,:pref_neighbors)
 
     for n in neighbors_of_v
-        if n.neighbor_vertex_id == graph_pref_vtx_index
+        if n.neighbor_vertex_id == graph_pref_vtx_id
             return n.edge_index
         end
     end
@@ -136,7 +136,7 @@ function get_edge_number_from_index_in_A(G::MetaGraph, v_idx::Int64, idx_in_A::I
     """Gets the index in the local graph relevant to v_idx of the preference corresponding to
     a transition to neighbor with global vertex id graph_pref."""
 
-    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+    neighbors_of_v = get_prop(G,v_idx,:pref_neighbors)
 
     for n in neighbors_of_v
         if n.idx_in_A == idx_in_A
@@ -154,7 +154,7 @@ function get_pref_from_edge_number(G::MetaGraph, v_idx::Int64, edge_number::Int6
     """Gets the index in the local graph relevant to v_idx of the preference corresponding to
     a transition to neighbor with global vertex id graph_pref."""
 
-    neighbors_of_v = get_prop(G,vtx_id,:pref_neighbors)
+    neighbors_of_v = get_prop(G,v_idx,:pref_neighbors)
 
     for n in neighbors_of_v
         if n.edge_index == edge_number
@@ -163,7 +163,7 @@ function get_pref_from_edge_number(G::MetaGraph, v_idx::Int64, edge_number::Int6
     end
 
     @show v_idx
-    @show graph_pref_vtx_id
+    @show edge_number
     println("(edge index query) Didn't find the desired graph_pref in v_idx neighbors!")
     return nothing
 end
@@ -288,7 +288,7 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
 
            # ---------- Set preference info ---------------
            # How many vertices does the source now have? (also index of new edge)
-           edge_index = length(neighbors(G,poly.source_vertex))
+           edge_index = length(get_prop(G,poly.source_vertex,:pref_neighbors)) + 1
            # Index of the source's reduced A that was flipped to get here
            idx_in_A = poly.flipped_index_in_reduced_source
            # Index of the destination
@@ -299,7 +299,7 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
 
            # Add neighbor to existing list and update vertex property
            d = get_prop(G,poly.source_vertex,:pref_neighbors)
-           append!(g, pref_data)
+           d = vcat(d,pref_data)
            set_prop!(G,poly.source_vertex,:pref_neighbors, d)
            # -----------------------------------------------
 
@@ -321,12 +321,13 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
            set_prop!(G,vtx_id, :contour_indices, contour_indices)
            set_prop!(G,vtx_id, :state, poly.state)
            set_prop!(G, vtx_id, :mapping, reduced_idx_dict)
+           set_prop!(G,vtx_id, :pref_neighbors, []) # contains neighbor preference info
            vtx_map[poly.state] = vtx_id # store vertex in state dictionary
 
 
            # ---------- Set preference info for source ----------------
            # How many vertices does the source now have? (also index of new edge)
-           edge_index = length(neighbors(G,poly.source_vertex))
+           edge_index = length(get_prop(G,poly.source_vertex,:pref_neighbors)) + 1
            # Index of the source's reduced A that was flipped to get here
            idx_in_A = poly.flipped_index_in_reduced_source
            # Index of the destination
@@ -337,7 +338,8 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
 
            # Add neighbor to existing list and update vertex property
            d = get_prop(G,poly.source_vertex,:pref_neighbors)
-           append!(g, pref_data)
+           # @show d
+           d = vcat(d,pref_data)
            set_prop!(G,poly.source_vertex,:pref_neighbors, d)
            # ----------------------------------------------- -----------
 

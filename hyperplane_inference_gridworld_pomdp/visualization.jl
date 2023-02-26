@@ -1,4 +1,5 @@
 my_belief_colormap = colormap("blues", 20)
+my_green_belief_colormap = colormap("greens", 20)
 
 function POMDPTools.render(pomdp::MapWorld, true_state::GridState, belief_state::GridBeliefState)
 
@@ -38,15 +39,20 @@ function POMDPTools.render(pomdp::MapWorld, true_state::GridState, belief_state:
     agent = render_agent(agent_ctx)
 
     # Plot belief for each neighbor hyperplane
-    hyperplane_A, hyperplane_b = pos_to_neighbor_matrices(belief_state.position, pomdp.hyperplane_graph)
+    G = pomdp.hyperplane_graph
+    hyperplane_A, hyperplane_b = pos_to_neighbor_matrices(belief_state.position, G)
+    current_vtx_id = pos_to_region_index(belief_state.position, G)
+    preference_neighbors = get_prop(G,current_vtx_id, :pref_neighbors)
+
     preference_lines = []
-    for i=1:length(hyperplane_b)
+    for i=1:length(preference_neighbors)
+        pref_row_in_A = preference_neighbors[i].idx_in_A
         marginal_preference = sum(belief_state.belief_intention[:,i])
-        clr = my_belief_colormap[convert(Int64, round(10*marginal_preference, digits=0))+1]
+        clr = my_green_belief_colormap[convert(Int64, round(10*marginal_preference, digits=0))+1]
 
         # Vector pointing from robot to direction orthogonal to + towards Ax=b
-        p1 = belief_state.position
-        p2 = belief_state.position + (0.5 + marginal_preference) .* (hyperplane_A[i,:] ./ sum(hyperplane_A[i,:]))
+        p1 = belief_state.position - [0.2,0.2]
+        p2 = p1 + (0.5 + marginal_preference) .* (hyperplane_A[pref_row_in_A,:] ./ sum(hyperplane_A[pref_row_in_A,:]))
 
         myline = compose(context(), line([(p1[1]/nx, (ny-p1[2])/ny), (p2[1]/nx, (ny-p2[2])/ny)]), stroke(clr), linewidth(0.5mm))
 

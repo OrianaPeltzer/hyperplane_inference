@@ -59,12 +59,12 @@ function map_problem_setup()
     # true_goal = GridPosition(1, 8)
     true_goal_index = 1
 
-    M_pref = fill(0,8+1,1)
+    M_pref = fill(0,8,1)
     M_pref[1] = 2 # at node #1 the preferred next node is #2
     M_pref[2] = 4
     M_pref[3] = 1
     M_pref[4] = 6
-    M_pref[5] = 9
+    M_pref[5] = -1 # means the goal is in the region so there's no pref
     M_pref[6] = 8
     M_pref[7] = 5
     M_pref[8] = 7
