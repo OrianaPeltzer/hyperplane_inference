@@ -23,6 +23,10 @@ using Compose
 using Gadfly
 using LinearAlgebra
 using Blink
+using JLD2
+using LinearAlgebra
+using CSV
+using DataFrames
 
 # For embed
 using Infiltrator
@@ -44,6 +48,8 @@ map_name = "2_10x10_squareobstacle_map"
 # Save directory
 save_dir = "/home/orianapeltzer/SA_data/"*map_name*"/"
 
+instances_per_trial = 100
+
 
 
 
@@ -62,30 +68,38 @@ include("hyperplane_inference_gridworld_pomdp/utilities.jl")
 include("hyperplane_inference_gridworld_pomdp/pomcp_functions.jl")
 # To visualize
 include("hyperplane_inference_gridworld_pomdp/visualization.jl")
+# Performance metrics
+include("hyperplane_inference_gridworld_pomdp/performance_metrics.jl")
 
 # All the global variables (sorry!)
 global mapworld_pomdp
+global mapworld_pomdp_goal
 # global solver
 global policy
 global curr_belstate
+global curr_belstate_goal
 global true_state
 global my_window
 
 # Create map and problem
-function initialize_map()
+function initialize_map(trial_number)
 
     global mapworld_pomdp
+    global mapworld_pomdp_goal
     global curr_belstate
+    global curr_belstate_goal
     global true_state
     global my_window
 
     RNG = MersenneTwister(1234)
 
+
+    # This can all be replaced by mapworld_pomdp = load(pomdp problem jld) -- #
     # Retrieve the occupancy map from the .jl file
     grid_side = 10
     OBSTACLE_MAP = map_occupancy_grid()
 
-    BII_gamma=1.5
+    BII_gamma=4.0
 
     map_graph, K_map = initialize_grid_graph(OBSTACLE_MAP)
 
@@ -94,6 +108,7 @@ function initialize_map()
 
     println("Loaded hyperplane graph!")
 
+    # This generates start, goal, preferences
     start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
     dist_matrix, dist_matrix_DP = get_dist_matrix(map_graph)
 
@@ -112,7 +127,45 @@ function initialize_map()
                               true_goal_index = true_goal_index,
                               true_preference = M_pref) # Other args are default
 
+    mapworld_pomdp_goal = MapWorld(obstacle_map = OBSTACLE_MAP,
+                            grid_side = grid_side,
+                            discount_factor = 0.96,
+                            incorrect_transition_penalty = 0.0, #-10
+                            correct_transition_reward= 0.0, #10.5
+                            reward = 1000.0,
+                            goal_options = goal_options,
+                            n_possible_goals = length(goal_options),
+                            map_graph = map_graph,
+                            K_map = K_map,
+                            dist_matrix = dist_matrix,
+                            dist_matrix_DP = dist_matrix_DP,
+                            BII_gamma = BII_gamma,
+                            hyperplane_graph = G,
+                            start_position = start_pos,
+                            true_goal_index = true_goal_index,
+                            true_preference = M_pref) # Other args are default
+    # ----------------------------------------------------------------------- #
+
+    # Save sampled problem in jld format
+    trial_dir = save_dir*"trial_"*string(trial_number)*"/"
+    @save trial_dir*"pomdp.jld2" mapworld_pomdp
+
+    # Write out problem specifics in info.txt
+    io = open(trial_dir*"info.txt", "w")
+    println("Trial "*string(trial_number))
+    println("goal options:")
+    println(mapworld_pomdp.goal_options)
+    println("")
+    println("correct goal index:")
+    println(mapworld_pomdp.true_goal_index)
+    println("")
+    println("start position:")
+    println(start_pos)
+    close(io)
+
+
     curr_belstate = initial_belief_state(mapworld_pomdp)
+    curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
     true_state = initial_state(mapworld_pomdp)
 
     # SHORTEST PATH DEBUGGING
@@ -125,8 +178,8 @@ function initialize_map()
     # @show path
 
     # For visualization
-    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    draw(SVGJS(save_dir*"foo.svg", 6inch, 6inch), c)
+    # c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
+    # draw(SVGJS(trial_dir*"visualizations/setup.svg", 6inch, 6inch), c)
     # Ubuntu
     # loadurl(my_window, "file:///home/orianapeltzer/SA_data/"*map_name*"/foo.svg")
     # loadurl(my_window, "file:///home/orianapeltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
@@ -137,13 +190,18 @@ function initialize_map()
 end
 
 # Main loop - is called each time an observation is received
-function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=true, iteration=0)
+function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=true, iteration=0,trial_number=1,
+                       allowed_observation=true,method="path_pref",new_observation_blended=true)
 
 
     global mapworld_pomdp
+    global mapworld_pomdp_goal
     global curr_belstate
+    global curr_belstate_goal
     global true_state
     global my_window
+
+    trial_dir = save_dir*"trial_"*string(trial_number)*"/"
 
     # are we at the right goal or not?
     curr_pos = true_state.position
@@ -156,36 +214,89 @@ function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=
         return
     end
 
-    # Turn the input angle into an observation
-    println("Angle observed: ", angle)
-    heading = angle_to_heading(angle)
-    println("Resulting heading: ", heading)
-    o = HumanInputObservation(heading,true,true)
+    if allowed_observation
+        # Turn the input angle into an observation
+        println("Angle observed: ", angle)
+        heading = angle_to_heading(angle)
+        println("Resulting heading: ", heading)
+        o = HumanInputObservation(heading,true,true)
 
-    # println("Created human observation")
+        # println("Created human observation")
 
-    # Update the belief state. The action is irrelevant.
-    curr_belstate = update_goal_belief(mapworld_pomdp, curr_belstate, o)
+        # Update the belief state. The action is irrelevant.
+        # curr_belstate, pref_update_time = @timed update_goal_belief(mapworld_pomdp, curr_belstate, o)
 
-    println("Belief after goal update")
-    @show curr_belstate
+        if method=="path_pref" || method=="blended"
+            curr_belstate, update_time = @timed update_goal_belief(mapworld_pomdp, curr_belstate, o)
+        elseif method=="goal_only"
+            curr_belstate_goal, update_time = @timed update_goal_belief(mapworld_pomdp, curr_belstate_goal, o)
+        else
+            update_time = 0.0
+        end
 
-    println("Finished updating goal belief")
 
+        # println("Belief after goal update")
+        # @show curr_belstate
+
+        println("Finished updating goal belief")
+    else
+        o = HumanInputObservation('E',false,true)
+        if method=="path_pref" || method=="blended"
+            curr_belstate, update_time = @timed update_goal_belief(mapworld_pomdp, curr_belstate, o)
+        elseif method=="goal_only"
+            curr_belstate_goal, update_time = @timed update_goal_belief(mapworld_pomdp, curr_belstate_goal, o)
+        else
+            update_time = 0.0
+        end
+        println("Observation not allowed: no  belief update.")
+    end
 
     # Take compliant action
     # a = heading
 
-    # Solve POMDP!
-    policy = solve(solver, mapworld_pomdp)
-    a, info = action_info(policy, curr_belstate);#, tree_in_info=true);
+
+
+
+    # (a, info), solve_time_2 = @timed action_info(policy, curr_belstate);#, tree_in_info=true);
+
+    if method=="path_pref" || method=="blended"
+        # Solve POMDP!
+        policy, solve_time_1 = @timed solve(solver, mapworld_pomdp)
+        (a, info), solve_time_2 = @timed action_info(policy, curr_belstate);#, tree_in_info=true);
+        entropy_goal = compute_entropy_goal_distribution(mapworld_pomdp, curr_belstate)
+        if method=="blended" && new_observation_blended && entropy_goal > 1.6
+            println("blended policy is using compliant action!")
+            a = heading
+        end
+    elseif method=="goal_only"
+        # Solve POMDP!
+        policy, solve_time_1 = @timed solve(solver, mapworld_pomdp_goal)
+        (a, info), solve_time_2 = @timed action_info(policy, curr_belstate_goal);#, tree_in_info=true);
+    else
+        if allowed_observation
+            a = heading
+        else
+            a = 'n'
+        end
+        solve_time_1 = 0.0
+        solve_time_2 = 0.0
+    end
+
+
+
     println("POMCP Iteration solved!")
+    pomdp_solve_time = solve_time_1 + solve_time_2
     @show a
+
 
     # Generate new state (the observation is irrelevant)
     true_state, r, o = gen(mapworld_pomdp, true_state, a, RNG)
 
-    curr_belstate = update_pose_belief(mapworld_pomdp, curr_belstate, a)
+    if method=="path_pref" || method=="blended"
+        curr_belstate = update_pose_belief(mapworld_pomdp, curr_belstate, a)
+    elseif method=="goal_only"
+        curr_belstate_goal = update_pose_belief(mapworld_pomdp, curr_belstate_goal, a)
+    end
 
     println("done updating pose belief")
 
@@ -198,26 +309,34 @@ function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=
     println("New true state:")
     @show true_state
 
-    println("New belief state:")
-    @show curr_belstate
+    # println("New belief state:")
+    # @show curr_belstate
 
-    display(curr_belstate.belief_intention)
-    println("")
-
-    println("Marginal preferences:")
-    display(sum(curr_belstate.belief_intention, dims=1))
-    println("")
+    # display(curr_belstate.belief_intention)
+    # println("")
+    #
+    # println("Marginal preferences:")
+    # display(sum(curr_belstate.belief_intention, dims=1))
+    # println("")
 
     if true_state.position == goal
         println("--------------------------")
         println("   Made it to the goal!!  ")
         println("--------------------------")
-        true_state.done = true
+        # true_state.done = true
     end
 
-    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
+    global run_number
+    # @save trial_dir*"/beliefs/run_"*string(run_number)*"_iter_"*string(iteration)*"_belief.jld2" curr_belstate
+    #
+    # if method=="path_pref" || method=="blended"
+    #     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
+    #     draw(SVGJS(trial_dir*"visualizations/run_"*string(run_number)*"_iter_"*string(iteration)*".svg", 6inch, 6inch), c)
+    # elseif method=="goal_only"
+    #     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate_goal)
+    #     draw(SVGJS(trial_dir*"visualizations/run_"*string(run_number)*"_iter_"*string(iteration)*".svg", 6inch, 6inch), c)
+    # end
 
-    draw(SVGJS(save_dir*string(iteration)*".svg", 6inch, 6inch), c)
     # Ubuntu
     if display_window
         loadurl(my_window, "file:///home/peltzer/SA_data/"*map_name*"/foo.svg")
@@ -226,24 +345,24 @@ function iterate_pomcp(angle::Float64, solver, RNG::AbstractRNG; display_window=
     # Windows
     # loadurl(my_window, "c:/opt/ros/melodic/x64/catkin_ws/src/hyperplane_inference/src/hyperplane_inference/foo.svg")
 
-    return true_state.position == goal
+    return true_state.position == goal, a, pomdp_solve_time, update_time
 
 end
 
 
 
-function simulate_pomcp()
+function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inputs=1,method="path_pref")
     """Simulate an instance of the pomdp problem"""
 
     global mapworld_pomdp
     global curr_belstate
+    global curr_belstate_goal
     global true_state
     global my_window
 
-    # my_window = Window()
+    trial_dir = save_dir*"trial_"*string(trial_number)*"/"
 
-    initialize_map()
-    println("Map initialized!")
+    # my_window = Window()
 
     RNG = MersenneTwister(1234)
     solver = POMCPSolver(rng=RNG, max_depth=30, tree_queries = 100000)
@@ -252,6 +371,34 @@ function simulate_pomcp()
     max_iterations = 31
     problem_terminated = false
 
+    # Initialize Performance Metrics
+    time_steps = [0]
+    if method=="path_pref" || method=="blended"
+        p_correct_goal = [compute_probability_correct_goal(mapworld_pomdp, curr_belstate)]
+        goal_dist_entropy = [compute_entropy_goal_distribution(mapworld_pomdp, curr_belstate)]
+    elseif method=="goal_only"
+        p_correct_goal = [compute_probability_correct_goal(mapworld_pomdp, curr_belstate_goal)]
+        goal_dist_entropy = [compute_entropy_goal_distribution(mapworld_pomdp, curr_belstate_goal)]
+    else
+        p_correct_goal = [0.0]
+        goal_dist_entropy = [0.0]
+    end
+
+    actions = ['X'] # invalid action
+    x_positions_on_map = [true_state.position[1]]
+    y_positions_on_map = [true_state.position[2]]
+
+    # Success indicators
+    goal_success = false
+    no_preference_violations = true
+    num_violations = 0
+    pomdp_solve_time = -1.0
+    inference_time = -1.0
+
+    # For evaluating path cost
+    current_position = deepcopy(true_state.position)
+    path_cost = 0
+
     while (~problem_terminated && iteration < max_iterations)
 
         println("")
@@ -259,26 +406,144 @@ function simulate_pomcp()
         println("Starting iteration "*string(iteration))
 
 
-        solver = POMCPSolver(rng=RNG, max_depth=31-iteration, tree_queries = 100000)
+        solver = POMCPSolver(rng=RNG, max_depth=31-iteration, tree_queries = 5000)#+100*iteration)
 
         @show true_state.position
         @show curr_belstate.position
 
-        o = sample_human_action(mapworld_pomdp, true_state, RNG)
+        new_observation_blended = false
 
-        println("Sampled new observation: ")
-        @show o
 
-        problem_terminated = iterate_pomcp(o, solver, RNG, display_window=false,
-                                           iteration=iteration)
+        if method != "compliant"
+            # Sample observation
+            o = sample_human_action(mapworld_pomdp, true_state, RNG)
+            println("Sampled new observation: ")
+            @show o
+            allowed_observation=true
+            new_observation_blended=(((iteration-1) % time_between_inputs)==0)
+        else
+            new_obs_time = (((iteration-1) % time_between_inputs)==0)
+            if new_obs_time
+                # Sample observation
+                o = sample_human_action(mapworld_pomdp, true_state, RNG)
+                println("Sampled new observation: ")
+                @show o
+                allowed_observation=true
+            elseif ((iteration-1) % time_between_inputs) <= 2
+                allowed_observation=true
+            else
+                allowed_observation=false
+            end
+        end
+
+
+
+        problem_terminated, a, solve_time, update_time = iterate_pomcp(o, solver, RNG, display_window=false,
+                                           iteration=iteration,trial_number=trial_number,
+                                           allowed_observation=allowed_observation,method=method,
+                                           new_observation_blended=new_observation_blended)
+
+
+        # First iteration only metrics
+        if iteration==1
+            pomdp_solve_time = solve_time
+            inference_time = update_time
+        end
+
+
+        # Iteration-specific performance metrics ---
+        # Path cost
+        if current_position==true_state.position && action != 'n'
+            path_cost += 1 # Banged into a wall
+        else
+            path_cost += norm(true_state.position - current_position)
+        end
+
+        # Metrics that vary in time
+        time_steps = vcat(time_steps, iteration)
+        if method=="path_pref" || method=="blended"
+            p_correct_goal = vcat(p_correct_goal, compute_probability_correct_goal(mapworld_pomdp, curr_belstate))
+            goal_dist_entropy = vcat(goal_dist_entropy, compute_entropy_goal_distribution(mapworld_pomdp, curr_belstate))
+        elseif method=="goal_only"
+            p_correct_goal = vcat(p_correct_goal, compute_probability_correct_goal(mapworld_pomdp, curr_belstate_goal))
+            goal_dist_entropy = vcat(goal_dist_entropy, compute_entropy_goal_distribution(mapworld_pomdp, curr_belstate_goal))
+        else
+            p_correct_goal = vcat(p_correct_goal, 0.0)
+            goal_dist_entropy = vcat(goal_dist_entropy, 0.0)
+        end
+        actions = vcat(actions, a)
+        x_positions_on_map = vcat(x_positions_on_map, true_state.position[1])
+        y_positions_on_map = vcat(y_positions_on_map, true_state.position[2])
+
+        # @show current_position
+        # @show a
+        # @infiltrate
+        violation = violated_preferences(mapworld_pomdp, current_position, a)
+        # @show violation
+        # Success indicators
+        if violated_preferences(mapworld_pomdp, current_position, a)
+            num_violations += 1
+            if num_violations >= 1
+                no_preference_violations = false
+            end
+        end
 
         println("Finished iteration "*string(iteration))
+        current_position = deepcopy(true_state.position)
         iteration += 1
 
     end
 
+    # End-of-run metrics
     if problem_terminated
         println("Success!")
+        goal_success = true
+    end
+
+    # Create DataFrame
+    headers = ["trial_number","run_id",
+               "method",
+               "time_between_inputs",
+               "goal_success","pref_success",
+               "path_cost",
+               "time_steps","p_correct_goal","goal_dist_entropy",
+               "actions","pos_x","pos_y",
+               "pomdp_solve_time", "inference_time"]
+    trial_data = (trial_number,run_number,
+                  time_between_inputs,
+                  method,
+                  goal_success, no_preference_violations,
+                  path_cost,
+                  time_steps, p_correct_goal, goal_dist_entropy,
+                  actions, x_positions_on_map, y_positions_on_map,
+                  pomdp_solve_time, inference_time)
+
+# DataFrame(A=Int[],B=Array{Int64}[],C=String[])
+    df = DataFrame(trial_number=Int64[],
+                   run_id = Int64[],
+                   time_between_inputs = Int64[],
+                   method=typeof(method)[],
+                   goal_success = Bool[],
+                   pref_success=Bool[],
+                   path_cost=Float64[],
+                   time_steps=typeof(time_steps)[],
+                   p_correct_goal=typeof(p_correct_goal)[],
+                   goal_dist_entropy=typeof(goal_dist_entropy)[],
+                   actions = typeof(actions)[],
+                   pos_x = typeof(x_positions_on_map)[],
+                   pos_y = typeof(y_positions_on_map)[],
+                   pomdp_solve_time = Float64[],
+                   inference_time = Float64[])
+
+    push!(df,trial_data)
+
+    @show df
+
+    # Create csv with header and first row
+    if run_number==1
+        CSV.write(trial_dir*"data.csv",df)
+    else
+        CSV.write(trial_dir*"data.csv",df,append=true)
     end
 
 end
@@ -316,5 +581,43 @@ end
 
 
 if ! isinteractive()
-    simulate_pomcp()
+
+    global mapworld_pomdp
+    global curr_belstate
+    global curr_belstate_goal
+    global true_state
+    global run_number
+
+    trial_number=1
+
+    # Generate problem instance (trial)
+    initialize_map(trial_number)
+    println("Map initialized!")
+
+    # method_list=["path_pref","goal_only","compliant","blended"]
+    method_list = ["blended"]
+
+    # times_between_inputs = [1,5,10,20,30]
+    times_between_inputs = [2]
+    run_number = 1
+    sims_per_setup = 10
+
+    # Loop through time between inputs (runs with different deltaT parameter)
+    for method in method_list
+        for deltat in times_between_inputs
+            for sim_num in 1:sims_per_setup
+                global mapworld_pomdp
+                global curr_belstate
+                global curr_belstate_goal
+                global true_state
+                global run_number
+                curr_belstate = initial_belief_state(mapworld_pomdp)
+                curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
+                true_state = initial_state(mapworld_pomdp)
+                simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method)
+
+                run_number += 1
+            end
+        end
+    end
 end

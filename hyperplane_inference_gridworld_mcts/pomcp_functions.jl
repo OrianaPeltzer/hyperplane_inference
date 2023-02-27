@@ -1,5 +1,5 @@
 """Sample random belief state"""
-function Base.rand(rng::AbstractRNG, bs::GridBeliefState)
+function random_state(rng::AbstractRNG, bs::GridBeliefState)
     # We need to _sample_ state instances from a belief state
 
     # Just copy over position (observable)
@@ -47,59 +47,13 @@ function Base.rand(rng::AbstractRNG, bs::GridBeliefState)
     return GridState(pos, done, goal_index, bs.neighbor_A, bs.neighbor_b, prefs)
 end
 
-"""Sample random belief state"""
-function Base.rand(rng::AbstractRNG, bs::GridBeliefStateGoal)
-    # We need to _sample_ state instances from a belief state
-
-    # Just copy over position (observable)
-    pos = bs.position
-    done = bs.done
-
-    # get marginals
-    belief_goals = bs.belief_intention
-    # Sample a new goal from probabilities
-    goal_index = findfirst(cumsum(belief_goals, dims=1) .>= rand(rng))[1]
-
-    goal_position = bs.goal_options[goal_index]
-
-    G = bs.hyperplane_graph
-    index_of_current_region = pos_to_region_index(bs.position, G)
-    prefs = []
-
-    for v in vertices(G)
-        A = get_prop(G,v,:A)
-        b = get_prop(G,v,:b)
-        num_neighbors = length(get_prop(G,v,:pref_neighbors))
-
-        # If the goal is in the set, no need to sample the pref
-        if is_in_region(A,b,goal_position)
-            prefs = vcat(prefs, num_neighbors+1)
-        # If current region, sample from the latest belief dist
-        elseif v == index_of_current_region
-            w = fill(1.0/num_neighbors, num_neighbors)
-            sample_pref = sample(1:num_neighbors, Weights(w))
-            prefs = vcat(prefs, sample_pref)
-        else
-            # sample from the marginals
-            w = fill(1.0/num_neighbors, num_neighbors)
-            sample_pref = sample(1:num_neighbors, Weights(w))
-            prefs = vcat(prefs, sample_pref)
-        end
-    end
-
-
-    # # Sample a new preference from the goal and position
-    # w = bs.belief_intention[goal_index,:] ./ sum(bs.belief_intention[goal_index,:])
-    # pref = sample(1:length(bs.belief_intention[goal_index,:]), Weights(w))
-
-    return GridState(pos, done, goal_index, bs.neighbor_A, bs.neighbor_b, prefs)
-end
-
 
 
 
 POMDPs.actions(pomdp::MapWorld) = ['N', 'S', 'E', 'W', '0', '1', '2', '3']
 POMDPs.discount(pomdp::MapWorld) = pomdp.discount_factor
+# POMDPs.initialstate(pomdp::MapWorld) = Deterministic(pomdp.start_states[pomdp.start_state_index])
+POMDPs.initialstate(pomdp::MapWorld) = Uniform(pomdp.start_states)
 
 # For now set isterminal to false and use your own outer condition to play around
 POMDPs.isterminal(pomdp::MapWorld) = false
@@ -109,19 +63,24 @@ struct MapWorldBelUpdater <: Updater
     pomdp::MapWorld
 end
 
-function POMDPs.update(updater::MapWorldBelUpdater, b::GridBeliefState, a::Char, o::HumanInputObservation)
-    b_updated_goal = update_goal_belief(updater.pomdp, b, o)
-    return update_pose_belief(updater.pomdp, b_updated_goal, a) # no observation in this model!
-end
-
-function POMDPs.update(updater::MapWorldBelUpdater, b::GridBeliefStateGoal, a::Char, o::HumanInputObservation)
-    b_updated_goal = update_goal_belief(updater.pomdp, b, o)
-    return update_pose_belief(updater.pomdp, b_updated_goal, a) # no observation in this model!
+function POMDPs.update(updater::MapWorldBelUpdater, b::GridBeliefState, a::Char)
+    return update_pose_belief(updater.pomdp, b, a) # no observation in this model!
 end
 
 function POMDPs.initialize_belief(updater, d)
     return initial_belief_state(updater.pomdp)
 end
+
+
+# function POMDPs.initialstate(pomdp::MapWorld)
+#     bs = pomdp.start_belief
+#     ImplicitDistribution(bs) do bs, rng
+#         return random_state(rng,bs)
+#     end
+# end
+# function POMDPs.initialstate(pomdp::MapWorld)
+#     return Uniform(pomdp.start_states)
+# end
 
 
 # Finally define your generative model
@@ -139,7 +98,7 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
     goal = p.goal_options[s.goal_index]
 
     # We suppose the human won't give any more observations
-    o = HumanInputObservation(0.0,false,false)
+    # o = HumanInputObservation(0.0,false,false)
 
 
     # Get reward if we reached the goal, otherwise get penalty
@@ -147,9 +106,7 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
         r = p.reward
         new_state = GridState(curr_pos, true, s.goal_index, s.neighbor_A,
                               s.neighbor_b, s.intentions)
-        return (sp=new_state,r=r,o=o)
-    elseif curr_pos in p.goal_options # We know if we visited the wrong goal
-        o = HumanInputObservation(0.0,false,true)
+        return (sp=new_state,r=r)
     end
 
 
@@ -220,7 +177,7 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
         r = p.reward
         new_state = GridState(new_pos, true, s.goal_index, s.neighbor_A,
                               s.neighbor_b, s.intentions)
-        return (sp=new_state,r=r,o=o)
+        return (sp=new_state,r=r)
     end
 
     # The robot is also not allowed to cut through polytope corners
@@ -306,7 +263,7 @@ function POMDPs.gen(p::MapWorld, s::GridState, a::Char, rng::AbstractRNG=Random.
     end
 
 
-    return (sp=new_state, r=r, o=o)
+    return (sp=new_state, r=r)
 end
 
 """Update belief with received observation
@@ -442,22 +399,11 @@ function update_goal_belief(pomdp::MapWorld, b::GridBeliefState, o::HumanInputOb
         # @show new_belief_intentions
 
     else
-        new_belief_intentions = prior_belief.belief_intention
-        # If we visited a hypothetical goal and it wasn't one, our belief goes to 0
-        if (o.visited_wrong_goal == true) & (pos ∈ pomdp.goal_options)
-            println("Visited wrong goal: now updating belief and setting p to 0")
-            wrong_goal_id = findfirst(isequal(pos), pomdp.goal_options)
-            new_belief_intentions[wrong_goal_id,:] .= 0.0
-        end
-
-        # Normalize here!
-        new_belief_intentions = new_belief_intentions ./ sum(new_belief_intentions)
-
         return GridBeliefState(pos, done, prior_belief.neighbor_A,
                                prior_belief.neighbor_b,
                                prior_belief.goal_options,
                                prior_belief.hyperplane_graph,
-                               new_belief_intentions,
+                               prior_belief.belief_intention,
                                prior_belief.preference_marginals)
     end
 
@@ -481,75 +427,6 @@ function update_goal_belief(pomdp::MapWorld, b::GridBeliefState, o::HumanInputOb
                            new_belief_intentions,
                            prior_belief.preference_marginals)
 end
-
-function update_goal_belief(pomdp::MapWorld, b::GridBeliefStateGoal, o::HumanInputObservation)
-
-    # Just copy over
-    pos = b.position
-    done = b.done
-
-    prior_belief = b
-
-    # now only update belief if you received an observation
-    if o.received_observation == true
-
-        n_goals = length(prior_belief.belief_intention)
-
-        measurement_likelihoods = fill(0.0, n_goals)
-        #zeros(pomdp.n_possible_goals, length(prior_belief.neighbor_b)+1)
-
-        # Go through all goals and update one by one
-        for goal_id=1:n_goals
-
-            goal = pomdp.goal_options[goal_id]
-            measurement_likelihoods[goal_id] = compute_measurement_likelihood(pomdp,pos,goal,o.heading)
-
-        end
-
-        # Update prior - not normalized yet
-        new_belief_intentions = measurement_likelihoods .* prior_belief.belief_intention
-
-
-
-    else
-        new_belief_intentions = prior_belief.belief_intention
-        # If we visited a hypothetical goal and it wasn't one, our belief goes to 0
-        if (o.visited_wrong_goal == true) & (pos ∈ pomdp.goal_options)
-            println("Visited wrong goal: now updating belief and setting p to 0")
-            wrong_goal_id = findfirst(isequal(pos), pomdp.goal_options)
-            new_belief_intentions[wrong_goal_id] = 0.0
-        end
-
-        # Normalize here!
-        new_belief_intentions = new_belief_intentions ./ sum(new_belief_intentions)
-
-        return GridBeliefStateGoal(pos, done, prior_belief.neighbor_A,
-                               prior_belief.neighbor_b,
-                               prior_belief.goal_options,
-                               prior_belief.hyperplane_graph,
-                               new_belief_intentions)
-    end
-
-    # If we visited a hypothetical goal and it wasn't one, our belief goes to 0
-    if (o.visited_wrong_goal == true) & (pos ∈ pomdp.goal_options)
-        println("Visited wrong goal: now updating belief and setting p to 0")
-        wrong_goal_id = findfirst(isequal(pos), pomdp.goal_options)
-        new_belief_intentions[wrong_goal_id] = 0.0
-    end
-
-    # Normalize here!
-    new_belief_intentions = new_belief_intentions ./ sum(new_belief_intentions)
-
-    # println("After normalization:")
-    # @show new_belief_intentions
-
-    return GridBeliefStateGoal(pos, done, prior_belief.neighbor_A,
-                           prior_belief.neighbor_b,
-                           prior_belief.goal_options,
-                           prior_belief.hyperplane_graph,
-                           new_belief_intentions)
-end
-
 
 
 function update_pose_belief(pomdp::MapWorld, b::GridBeliefState, a::Char)
@@ -586,40 +463,6 @@ function update_pose_belief(pomdp::MapWorld, b::GridBeliefState, a::Char)
         updated_belief = GridBeliefState(pos, b.done, b.neighbor_A, b.neighbor_b,
                                          b.goal_options, b.hyperplane_graph,
                                          b.belief_intention, b.preference_marginals)
-    end
-
-    return updated_belief
-end
-
-function update_pose_belief(pomdp::MapWorld, b::GridBeliefStateGoal, a::Char)
-    println("Entered update pose belief")
-
-    # Just copy over done but update position
-    pos = update_position(pomdp, b.position, a)
-    done = b.done
-
-    # True if we are staying in the same region
-    same = all(<=(0), b.neighbor_A*(-0.1 .+ pos) - b.neighbor_b)
-
-    # @show pos
-    # @show same
-    # @show b.neighbor_A*pos-b.neighbor_b
-
-    # If region changed, reconstruct belief from marginals
-    # New: the "going back to previous set" probability is (1-p(transition))
-    if same==0
-        n_A, n_b = pos_to_neighbor_matrices(pos, pomdp.hyperplane_graph)
-
-        # Step #2: update the belief using marginals
-        # println("TRANSITION DETECTED! RESHAPING PRIOR BELIEF")
-        updated_belief = GridBeliefStateGoal(pos, done, n_A, n_b,
-                                         b.goal_options, b.hyperplane_graph,
-                                         b.belief_intention)
-    else
-        # println("NO TRANSITION - NO RESHAPING")
-        updated_belief = GridBeliefStateGoal(pos, b.done, b.neighbor_A, b.neighbor_b,
-                                         b.goal_options, b.hyperplane_graph,
-                                         b.belief_intention)
     end
 
     return updated_belief

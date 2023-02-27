@@ -30,16 +30,6 @@ end
     preference_marginals::Dict # mapping vertex id to belief over preferences
 end
 
-@with_kw struct GridBeliefStateGoal
-    position::GridPosition
-    done::Bool # are we in a terminal state?
-    neighbor_A::Matrix # A*current_state - b <= 0
-    neighbor_b::Array
-    goal_options::Array{GridPosition}
-    hyperplane_graph::MetaGraph
-    belief_intention::Array{Float64} # size #goals*(1+#neighbors)
-end
-
 @with_kw struct HumanAngleObservation
     direction::Float64 # angle
     received_observation::Bool # Received human input
@@ -100,17 +90,53 @@ function heading_to_angle(a::Char)
 
 end
 
+
+
 """Struct for true map of the world"""
 # The POMDP should contain the true map - remember it is your nature hat
-@with_kw struct MapWorld <: POMDPs.POMDP{GridState,Char,HumanInputObservation}
+@with_kw struct MapWorld <: POMDPs.MDP{GridState,Char}
+    start_states::Array{GridState}    = []
+    start_state_index::Int64          = 1
     obstacle_map::Matrix{Bool}        = fill(false, 10, 10)
     grid_side::Int64                  = 10
-    discount_factor::Float64          = 0.9
-    # discount::Float64                 = 0.94
+    discount_factor::Float64          = 0.94
+    discount::Float64                 = 0.94
     penalty::Float64                  = -1.0
     diag_penalty::Float64             = -1.414 # sqrt(2)
-    incorrect_transition_penalty::Float64 = -10.0 #-10
-    correct_transition_reward::Float64 = 10.5 #10.5
+    incorrect_transition_penalty::Float64 = -5.0
+    correct_transition_reward::Float64 = 5.5
+    reward::Float64                   = 100.0
+    new_obs_weight::Float64           = 0.75
+    goal_options::Array{GridPosition} = [GridPosition(7, 7),
+                                         GridPosition(1, 8)]
+    # goal::GridPosition                = GridPosition(3, 3)
+    n_possible_goals::Int64           = 2
+    human_input_std::Float64          = 0.5
+    map_graph::MetaGraph              = MetaGraph()
+    K_map::Matrix{Int}                = fill(0, 1, 1)
+    dist_matrix::Matrix{Float64}      = fill(0, 1, 1)
+    dist_matrix_DP::Matrix{Float64}   = fill(0, 1, 1)
+    BII_gamma::Float64                = 0.8
+
+    hyperplane_graph::MetaGraph       = MetaGraph()
+    # True start, goal and preferences are kept here
+    start_position::GridPosition      = GridPosition(1,1)
+    true_goal_index::Int64            = 1
+    true_preference::Matrix{Int}      = fill(0, 1, 1)
+end
+
+
+"""Struct for true map of the world without belief"""
+# The POMDP should contain the true map - remember it is your nature hat
+@with_kw struct MapWorldSetup
+    obstacle_map::Matrix{Bool}        = fill(false, 10, 10)
+    grid_side::Int64                  = 10
+    discount_factor::Float64          = 0.94
+    discount::Float64                 = 0.94
+    penalty::Float64                  = -1.0
+    diag_penalty::Float64             = -1.414 # sqrt(2)
+    incorrect_transition_penalty::Float64 = -5.0
+    correct_transition_reward::Float64 = 5.5
     reward::Float64                   = 100.0
     new_obs_weight::Float64           = 0.75
     goal_options::Array{GridPosition} = [GridPosition(7, 7),
@@ -173,7 +199,7 @@ function violates_constraint(g::MetaGraph, constraint::NeighborConstraint, v::In
 end
 
 """(Problem Specific) Function to get initial belief state"""
-function initial_belief_state(pomdp::MapWorld)
+function initial_belief_state(pomdp::MapWorldSetup)
 
     # Starting state for the robot
     start_state = pomdp.start_position
@@ -194,21 +220,9 @@ function initial_belief_state(pomdp::MapWorld)
     return GridBeliefState(start_state, false, start_A, start_b, pomdp.goal_options, pomdp.hyperplane_graph, belief_intention, preference_marginals)
 end
 
-function initial_belief_state_goal(pomdp::MapWorld)
-
-    # Starting state for the robot
-    start_state = pomdp.start_position
-
-    start_A, start_b = pos_to_neighbor_matrices(start_state, pomdp.hyperplane_graph)
-
-    belief_intention = fill(1.0/length(pomdp.goal_options), length(pomdp.goal_options))
-
-    return GridBeliefStateGoal(start_state, false, start_A, start_b, pomdp.goal_options, pomdp.hyperplane_graph, belief_intention)
-end
-
 
 """(Problem Specific) Function to get initial state"""
-function initial_state(pomdp::MapWorld)
+function true_initial_state(pomdp::MapWorldSetup)
 
     # Starting state for the robot
     start_state = pomdp.start_position
@@ -221,12 +235,8 @@ function initial_state(pomdp::MapWorld)
     global_prefs = pomdp.true_preference
     preference_indices = []
 
-    true_goal = pomdp.goal_options[pomdp.true_goal_index]
-    true_goal_region_idx = pos_to_region_index(true_goal, G)
-
     for (i,gp) in enumerate(global_prefs)
-        # if gp == -1 # means the goal is in the region
-        if i == true_goal_region_idx # means the goal is in the region
+        if gp == -1 # means the goal is in the region
             num_admissible_neighbors = length(get_prop(G,i,:pref_neighbors))
             preference_indices = vcat(preference_indices, num_admissible_neighbors + 1)
         else
@@ -241,7 +251,7 @@ end
 
 
 
-function initialize_prior_belief(p::MapWorld,pos::GridPosition,A::Matrix,b::Vector)
+function initialize_prior_belief(p::MapWorldSetup,pos::GridPosition,A::Matrix,b::Vector)
     # Uniform prior on which goal is the intended one
     G = p.hyperplane_graph
     vtx_id = pos_to_region_index(pos, G)
@@ -582,7 +592,7 @@ function update_position(p::MapWorld, pos::GridPosition, a::Char)
     return new_pos
 end
 
-function get_shortest_path_length(p::MapWorld, start::GridPosition,finish::GridPosition)
+function get_shortest_path_length(p::Union{MapWorld, MapWorldSetup}, start::GridPosition,finish::GridPosition)
     """Returns the length of the shortest path from start to finish"""
     start_index = p.K_map[start[1], start[2]]
     end_index = p.K_map[finish[1], finish[2]]
