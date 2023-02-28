@@ -54,13 +54,13 @@ function sample_problem_setup()
 
     # Sample random start and goal
 
-    all_start_options = [GridPosition(x, y) for x=1:10 for y in 1:10 if (OBSTACLE_MAP[x,8] == false)]
+    all_start_options = [GridPosition(x, y) for x=1:10 for y in 1:10 if (OBSTACLE_MAP[x,y] == false)]
 
     # start_pos = GridPosition(1,1)
     start_pos = sample(all_start_options)
 
 
-    all_goal_options = [GridPosition(x, y) for x=1:10 for y in 1:10 if ((OBSTACLE_MAP[x,8] == false) && (GridPosition(x,y)!=start_pos))]
+    all_goal_options = [GridPosition(x, y) for x=1:10 for y in 1:10 if ((OBSTACLE_MAP[x,y] == false) && (GridPosition(x,y)!=start_pos))]
     # goal_options = [GridPosition(x, 8) for x=1:10 if OBSTACLE_MAP[x,8] == false]
 
     goal_options = sample(all_goal_options,10,replace=false)

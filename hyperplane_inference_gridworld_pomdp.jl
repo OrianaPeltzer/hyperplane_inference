@@ -109,7 +109,12 @@ function initialize_map(trial_number)
     println("Loaded hyperplane graph!")
 
     # This generates start, goal, preferences
-    start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
+    # start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
+    if trial_number==1
+        start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
+    else
+        start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
+    end
     dist_matrix, dist_matrix_DP = get_dist_matrix(map_graph)
 
     # define POMDP
@@ -152,15 +157,13 @@ function initialize_map(trial_number)
 
     # Write out problem specifics in info.txt
     io = open(trial_dir*"info.txt", "w")
-    println("Trial "*string(trial_number))
-    println("goal options:")
-    println(mapworld_pomdp.goal_options)
-    println("")
-    println("correct goal index:")
-    println(mapworld_pomdp.true_goal_index)
-    println("")
-    println("start position:")
-    println(start_pos)
+    write(io, "Trial "*string(trial_number)*"\n\n")
+    write(io, "goal options:\n")
+    write(io, string(mapworld_pomdp.goal_options)*"\n\n")
+    write(io, "correct goal index:"*"\n")
+    write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
+    write(io, "start position:\n")
+    write(io, string(start_pos)*"\n")
     close(io)
 
 
@@ -178,8 +181,8 @@ function initialize_map(trial_number)
     # @show path
 
     # For visualization
-    # c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    # draw(SVGJS(trial_dir*"visualizations/setup.svg", 6inch, 6inch), c)
+    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
+    draw(SVGJS(trial_dir*"setup.svg", 6inch, 6inch), c)
     # Ubuntu
     # loadurl(my_window, "file:///home/orianapeltzer/SA_data/"*map_name*"/foo.svg")
     # loadurl(my_window, "file:///home/orianapeltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
@@ -399,6 +402,8 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
     current_position = deepcopy(true_state.position)
     path_cost = 0
 
+    previous_obs = 0.0
+
     while (~problem_terminated && iteration < max_iterations)
 
         println("")
@@ -429,9 +434,15 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
                 println("Sampled new observation: ")
                 @show o
                 allowed_observation=true
+                previous_obs=o
             elseif ((iteration-1) % time_between_inputs) <= 2
+                println("Using previous observation:")
+                @show o
+                o = previous_obs
                 allowed_observation=true
             else
+                println("No observation allowed!")
+                o = previous_obs
                 allowed_observation=false
             end
         end
@@ -541,9 +552,9 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
 
     # Create csv with header and first row
     if run_number==1
-        CSV.write(trial_dir*"data.csv",df)
+        CSV.write(save_dir*"data.csv",df)
     else
-        CSV.write(trial_dir*"data.csv",df,append=true)
+        CSV.write(save_dir*"data.csv",df,append=true)
     end
 
 end
@@ -588,35 +599,40 @@ if ! isinteractive()
     global true_state
     global run_number
 
-    trial_number=1
-
-    # Generate problem instance (trial)
-    initialize_map(trial_number)
-    println("Map initialized!")
-
-    # method_list=["path_pref","goal_only","compliant","blended"]
-    method_list = ["blended"]
-
-    # times_between_inputs = [1,5,10,20,30]
-    times_between_inputs = [2]
+    num_random_trials = 1
     run_number = 1
-    sims_per_setup = 10
 
-    # Loop through time between inputs (runs with different deltaT parameter)
-    for method in method_list
-        for deltat in times_between_inputs
-            for sim_num in 1:sims_per_setup
-                global mapworld_pomdp
-                global curr_belstate
-                global curr_belstate_goal
-                global true_state
-                global run_number
-                curr_belstate = initial_belief_state(mapworld_pomdp)
-                curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
-                true_state = initial_state(mapworld_pomdp)
-                simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method)
+    for trial_number=1:num_random_trials
 
-                run_number += 1
+        # Generate problem instance (trial)
+        initialize_map(trial_number)
+
+        println("Map initialized!")
+
+        # method_list=["path_pref","goal_only","compliant","blended"]
+        method_list = ["compliant"]
+
+        # times_between_inputs = [1,5,10,20,30]
+        times_between_inputs = [1]
+
+        sims_per_setup = 1
+
+        # Loop through time between inputs (runs with different deltaT parameter)
+        for method in method_list
+            for deltat in times_between_inputs
+                for sim_num in 1:sims_per_setup
+                    global mapworld_pomdp
+                    global curr_belstate
+                    global curr_belstate_goal
+                    global true_state
+                    global run_number
+                    curr_belstate = initial_belief_state(mapworld_pomdp)
+                    curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
+                    true_state = initial_state(mapworld_pomdp)
+                    simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method)
+
+                    run_number += 1
+                end
             end
         end
     end
