@@ -26,7 +26,9 @@ using Infiltrator
 include("hyperplane_inference_gridworld_pomdp/convex_sets.jl")
 
 # Map of the environment
-map_name = "2_10x10_squareobstacle_map"
+# map_name = "2_10x10_squareobstacle_map"
+# map_name = "3_20x20_office_map"
+map_name = "4_10x10_office_map"
 map_dir = "maps/"*map_name*".jl"
 include(map_dir)
 
@@ -55,6 +57,8 @@ mapworld_pomdp = MapWorld(obstacle_map = OBSTACLE_MAP,
                           start_position = start_pos,
                           true_goal_index = true_goal_index,
                           true_preference = M_pref) # Other args are default
+
+@show vertices(mapworld_pomdp.hyperplane_graph)
 
 start_x, start_y = map_initial_pos()
 

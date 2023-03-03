@@ -19,12 +19,24 @@ function compute_entropy_goal_distribution(p::MapWorld, b::GridBeliefState)
     return -sum(p_logp)
 end
 
+function compute_entropy_goal_currentpref(p::MapWorld, b::GridBeliefState)
+
+    # marginals_over_goals = sum(b.belief_intention, dims=2)
+
+    p_logp = [x*log(x+0.0000001) for x in b.belief_intention]
+
+    return -sum(p_logp)
+end
+
+
 function compute_entropy_goal_distribution(p::MapWorld, b::GridBeliefStateGoal)
     p_logp = [x*log(x+0.0000001) for x in b.belief_intention]
     return -sum(p_logp)
 end
 
 function violated_preferences(p::MapWorld, pos::GridPosition, a::Char)
+
+
 
     curr_pos = pos
 

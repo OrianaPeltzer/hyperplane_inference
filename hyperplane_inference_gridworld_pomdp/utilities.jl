@@ -7,12 +7,42 @@ function angdiff(a, b)
     return r
 end
 
+function heading_to_vector(a::Char)
+    if a == 'W'
+        return [-1,0]
+    elseif a == 'E'
+        return [1,0]
+    elseif a == 'S'
+        return [0,-1]
+    elseif a == 'N'
+        return [0,1]
+    elseif a == '0' # SW
+        return [-1,-1]./sqrt(2)
+    elseif a == '2' # NW
+        return [-1,1]./sqrt(2)
+    elseif a == '1' # SE
+        return [1,-1]./sqrt(2)
+    elseif a == '3' # NE
+        return [1,1]./sqrt(2)
+    else
+        return [0,0]
+    end
+end
+
 """(Utilities) computes the angle traced by the line to the target"""
 function compute_direction(pos::GridPosition, target::GridPosition)
     return atan(target[2]-pos[2], target[1]-pos[1])
 end
 
 function is_in_region(A::Matrix, b::Vector, pos::GridPosition)
+    """Returns true if and only if the specified position is inside the region
+    denoted by A and b."""
+    adjustment = 0.1
+    sequence = A*[pos[1]-adjustment, pos[2]-adjustment] - b
+    return all(<=(0), sequence)
+end
+
+function is_in_region(A::Matrix, b::Vector, pos::Vector)
     """Returns true if and only if the specified position is inside the region
     denoted by A and b."""
     adjustment = 0.1
@@ -277,6 +307,79 @@ function pos_to_lines(pos::GridPosition)
     end
 
     return []
+end
+
+function pos_to_lines_allatonce()
+
+    Lx = 5
+    Ly = 5
+    Ux = 6
+    Uy = 6
+
+    # left of vertical, below hz
+    lowerleftA = [1 0
+                  0 1]
+    lowerleftb = [Lx-1,Ly-1]
+    lowerleftlines = [[(4,0),(4,4)], [(0,4),(4,4)]]
+
+    # left of v, below upper, above lower
+    leftA = [1 0
+             0 1
+             0 -1]
+    leftb = [Lx-1,Uy,-Ly]
+    leftlines = [[(4,4),(4,6)], [(0,6),(4,6)], [(0,4),(4,4)]]
+
+    # left of v, above lower
+    upperleftA = [1 0
+                  0 -1]
+    upperleftb = [Lx-1, -Uy-1]
+    upperleftlines = [[(4,6),(4,10)], [(0,6),(4,6)]]
+
+    # left of right, right of left, above h
+    upA = [1 0
+           -1 0
+           0 -1]
+    upb = [Ux, -Lx, -Uy-1]
+    uplines = [[(6,6),(6,10)], [(4,6),(4,10)], [(4,6),(6,6)]]
+
+    # right of v, above h
+    upperrightA = [-1 0
+                   0 -1]
+    upperrightb = [-Ux-1, -Uy-1]
+    upperrightlines = [[(6,6),(6,10)], [(6,6),(10,6)]]
+
+    # right of v, below h, above h
+    rightA = [-1 0
+              0 1
+              0 -1]
+    rightb = [-Ux-1, Uy, -Ly]
+    rightlines = [[(6,4),(6,6)], [(6,6),(10,6)], [(6,4),(10,4)]]
+
+    # right of v, below h
+    lowerrightA = [-1 0
+                   0 1]
+    lowerrightb = [-Ux-1, Ly-1]
+    lowerrightlines = [[(6,0),(6,4)], [(6,4),(10,4)]]
+
+    # left of right, right of left, below h
+    lowA = [1 0
+            -1 0
+            0 1]
+    lowb = [Ux, -Lx, Ly-1]
+    lowlines = [[(6,0),(6,4)], [(4,0),(4,4)], [(4,4),(6,4)]]
+
+    As = [lowerleftA, leftA, upperleftA, upA, upperrightA, rightA, lowerrightA, lowA]
+    bs = [lowerleftb, leftb, upperleftb, upb, upperrightb, rightb, lowerrightb, lowb]
+    lines = [lowerleftlines, leftlines, upperleftlines, uplines, upperrightlines, rightlines, lowerrightlines, lowlines]
+
+    # for i=1:8
+    #     sequence = As[i]*[pos[1], pos[2]] - bs[i]
+    #     if all(<=(0), sequence)
+    #         return lines[i]
+    #     end
+    # end
+
+    return lines
 end
 
 

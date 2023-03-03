@@ -100,18 +100,20 @@ function heading_to_angle(a::Char)
 
 end
 
+
+
 """Struct for true map of the world"""
 # The POMDP should contain the true map - remember it is your nature hat
 @with_kw struct MapWorld <: POMDPs.POMDP{GridState,Char,HumanInputObservation}
     obstacle_map::Matrix{Bool}        = fill(false, 10, 10)
     grid_side::Int64                  = 10
-    discount_factor::Float64          = 0.9
+    discount_factor::Float64          = 0.92
     # discount::Float64                 = 0.94
     penalty::Float64                  = -1.0
     diag_penalty::Float64             = -1.414 # sqrt(2)
-    incorrect_transition_penalty::Float64 = -10.0 #-10
-    correct_transition_reward::Float64 = 10.5 #10.5
-    reward::Float64                   = 100.0
+    incorrect_transition_penalty::Float64 = -18.0 #-10
+    correct_transition_reward::Float64 = 15.5 #10.5
+    reward::Float64                   = 60.0
     new_obs_weight::Float64           = 0.75
     goal_options::Array{GridPosition} = [GridPosition(7, 7),
                                          GridPosition(1, 8)]
@@ -142,7 +144,13 @@ struct NeighborConstraint
 end
 
 get_final_node(path::Vector{E} where {E <: Edge}) = get(path,length(path),Edge(-1,-1)).dst
-traversal_time(path::Vector{E} where {E <: Edge},g::MetaGraph) = sum([get_prop(g,e,:weight) for e in path])
+
+function traversal_time(path::Vector{E} where {E <: Edge},g::MetaGraph)
+    if length(path)==0
+        return 0.0
+    end
+    return sum([get_prop(g,e,:weight) for e in path])
+end
 
 function violates_constraint(g::MetaGraph, constraint::NeighborConstraint, v::Int64, u::Int64) # replaced path with u
 
@@ -236,7 +244,8 @@ function initial_state(pomdp::MapWorld)
     end
 
     return GridState(start_state, false, pomdp.true_goal_index,
-                     start_A, start_b, preference_indices)
+                     start_A, start_b, preference_indices)#[1 for k=1:28])
+                     # preference_indices)[1 for k=1:73])
 end
 
 
@@ -473,19 +482,28 @@ function compute_measurement_likelihood(p::MapWorld, pos::GridPosition,
 
     # Is the human's intended location in a different region?
     # same_region = all(<=(0), neighbor_A*human_intended_position-neighbor_b)
-    same_region = is_in_region(neighbor_A, neighbor_b, human_intended_position)
 
+    same_region = is_in_region(neighbor_A, neighbor_b, human_intended_position)
+    human_intended_index = p.K_map[human_intended_position[1], human_intended_position[2]]
 
     # 4. Compute delta(pos->goal|preference) complying with intention ---------
+    human_violated_constraint=false
+    if same_region==0
+        # Did we transition to the preferred region, in which case do as usual?
+        # Or did we violate a constraint and need to turn back
+        if violates_constraint(p.map_graph, preference_constraint, human_intended_index, pos_index)
+            human_violated_constraint=true
+        end
+    end
 
-    if same_region==0 # Different region!
+    if same_region==0 && human_violated_constraint# Different region!
         # If the human wanted to transition to another region passing by lt,
         # they would need to backtrack back into the region first.
         # likelihood propto 2*dist(pos,intention) + delta(pos->goal|preference)
         distance_to_goal_complying = 2*distance_to_intended_position + distance_to_goal
     else
         # Get index in the mapgraph of the intended pose
-        human_intended_index = p.K_map[human_intended_position[1], human_intended_position[2]]
+        # human_intended_index = p.K_map[human_intended_position[1], human_intended_position[2]]
 
         # @show human_intended_index
 

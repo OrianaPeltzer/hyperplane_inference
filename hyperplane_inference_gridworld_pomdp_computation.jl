@@ -107,15 +107,16 @@ function initialize_map(trial_number)
 
     println("Loaded hyperplane graph!")
 
-
+    # This generates start, goal, preferences
     # start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
     # if trial_number==1
     #     start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
+    # elseif trial_number==2
+    #     start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
+    #     start_pos = GridPosition(6,1)
     # else
     #     start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
     # end
-
-    # This generates start, goal, preferences
     start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
 
     dist_matrix, dist_matrix_DP = get_dist_matrix(map_graph)
@@ -156,18 +157,18 @@ function initialize_map(trial_number)
 
     # Save sampled problem in jld format
     trial_dir = save_dir*"trial_"*string(trial_number)*"/"
-    @save trial_dir*"pomdp.jld2" mapworld_pomdp
+    # @save trial_dir*"pomdp.jld2" mapworld_pomdp
 
     # Write out problem specifics in info.txt
-    io = open(trial_dir*"info.txt", "w")
-    write(io, "Trial "*string(trial_number)*"\n\n")
-    write(io, "goal options:\n")
-    write(io, string(mapworld_pomdp.goal_options)*"\n\n")
-    write(io, "correct goal index:"*"\n")
-    write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
-    write(io, "start position:\n")
-    write(io, string(start_pos)*"\n")
-    close(io)
+    # io = open(trial_dir*"info.txt", "w")
+    # write(io, "Trial "*string(trial_number)*"\n\n")
+    # write(io, "goal options:\n")
+    # write(io, string(mapworld_pomdp.goal_options)*"\n\n")
+    # write(io, "correct goal index:"*"\n")
+    # write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
+    # write(io, "start position:\n")
+    # write(io, string(start_pos)*"\n")
+    # close(io)
 
 
     curr_belstate = initial_belief_state(mapworld_pomdp)
@@ -185,7 +186,7 @@ function initialize_map(trial_number)
 
     # For visualization
     c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    draw(SVGJS(save_dir*"setup_"*string(trial_number)*".svg", 6inch, 6inch), c)
+    # draw(SVGJS(save_dir*"setup_"*string(trial_number)*".svg", 6inch, 6inch), c)
     # Ubuntu
     # loadurl(my_window, "file:///home/orianapeltzer/SA_data/"*map_name*"/foo.svg")
     # loadurl(my_window, "file:///home/orianapeltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
@@ -597,9 +598,9 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
 
     # Create csv with header and first row
     if run_number==1
-        CSV.write(save_dir*"officemap_data_comparisons.csv",df)
+        CSV.write(save_dir*"officemap_data_computation.csv",df)
     else
-        CSV.write(save_dir*"officemap_data_comparisons.csv",df,append=true)
+        CSV.write(save_dir*"officemap_data_computation.csv",df,append=true)
     end
 
 end
@@ -645,20 +646,20 @@ if ! isinteractive()
     global true_state
     global run_number
 
-    num_random_trials = 10
+    num_random_trials = 100
     # method_list=["path_pref","goal_only","compliant","blended"]
-    method_list = ["path_pref"]
+    method_list = ["path_pref","goal_only"]
     # times_between_inputs = [1,5,10,20,30]
-    times_between_inputs = [30]
-    sims_per_setup = 20
+    times_between_inputs = [1]
+    sims_per_setup = 1
 
 
     max_depth=30 # lookahead for the robot
-    max_iterations=31 # for stopping sim early
+    max_iterations=2 # for stopping sim early
 
 
 
-    run_number = 82
+    run_number = 1
 
     for trial_number=1:num_random_trials
 

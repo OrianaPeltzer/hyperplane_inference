@@ -10,6 +10,7 @@ function Base.rand(rng::AbstractRNG, bs::GridBeliefState)
     belief_goals = sum(bs.belief_intention, dims=2)
     # Sample a new goal from probabilities
     goal_index = findfirst(cumsum(belief_goals, dims=1) .>= rand(rng))[1]
+    # goal_index = sample(1:length(belief_goals),Weights([elt[i] for elt=1:]))
 
     goal_position = bs.goal_options[goal_index]
 
@@ -58,7 +59,8 @@ function Base.rand(rng::AbstractRNG, bs::GridBeliefStateGoal)
     # get marginals
     belief_goals = bs.belief_intention
     # Sample a new goal from probabilities
-    goal_index = findfirst(cumsum(belief_goals, dims=1) .>= rand(rng))[1]
+    # goal_index = findfirst(cumsum(belief_goals, dims=1) .>= rand(rng))[1]
+    goal_index = sample(1:length(belief_goals),Weights(belief_goals))
 
     goal_position = bs.goal_options[goal_index]
 
@@ -387,29 +389,6 @@ function update_goal_belief(pomdp::MapWorld, b::GridBeliefState, o::HumanInputOb
     # now only update belief if you received an observation
     if o.received_observation == true
 
-        # If we made a transition, skip the likelihood update (except for wrong
-        # goal part) and return current beliefs.
-        # human_intended_position = update_position(pomdp,pos,o.heading)
-        # same = all(<=(0), b.neighbor_A*human_intended_position-b.neighbor_b)
-        # if same==0
-        #     # println("Observation is mapped to transition in another set!")
-        #     new_belief_intentions = b.belief_intention
-        #     # If we visited a hypothetical goal and it wasn't one, our belief goes to 0
-        #     if (o.visited_wrong_goal == true) & (pos ∈ pomdp.goal_options)
-        #         # println("Visited wrong goal: now updating belief and setting p to 0")
-        #         wrong_goal_id = findfirst(isequal(pos), pomdp.goal_options)
-        #         new_belief_intentions[wrong_goal_id,:] .= 0.0
-        #     end
-        #     # println("EXITED IF")
-        #
-        #     # Normalize here!
-        #     new_belief_intentions = new_belief_intentions ./ sum(new_belief_intentions)
-        #
-        #     # println("After normalization:")
-        #     # @show new_belief_intentions
-        #
-        #     return GridBeliefState(pos, done, prior_belief.neighbor_A, prior_belief.neighbor_b, new_belief_intentions)
-        # end
 
         n_goals, n_prefs = size(prior_belief.belief_intention)
 

@@ -44,10 +44,10 @@ using Infiltrator
 
 # ---------------- Experiment Parameters -----------------------
 # Map of the environment
-# map_name = "2_10x10_squareobstacle_map"
 map_name = "4_10x10_office_map"
 # Save directory
 save_dir = "/home/orianapeltzer/SA_data/"*map_name*"/"
+
 
 
 
@@ -107,17 +107,16 @@ function initialize_map(trial_number)
 
     println("Loaded hyperplane graph!")
 
-
-    # start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
-    # if trial_number==1
-    #     start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
-    # else
-    #     start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
-    # end
-
     # This generates start, goal, preferences
-    start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
-
+    # start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
+    if trial_number==1
+        start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
+    # elseif trial_number==2
+    #     start_pos, true_goal_index, goal_options, M_pref = map_problem_setup()
+    else
+        start_pos, true_goal_index, goal_options, M_pref = sample_problem_setup()
+    end
+    # start_pos = GridPosition(1,1)
     dist_matrix, dist_matrix_DP = get_dist_matrix(map_graph)
 
     # define POMDP
@@ -137,7 +136,7 @@ function initialize_map(trial_number)
 
     mapworld_pomdp_goal = MapWorld(obstacle_map = OBSTACLE_MAP,
                             grid_side = grid_side,
-                            discount_factor = 0.96,
+                            discount_factor = 0.9,
                             incorrect_transition_penalty = 0.0, #-10
                             correct_transition_reward= 0.0, #10.5
                             reward = 1000.0,
@@ -156,18 +155,18 @@ function initialize_map(trial_number)
 
     # Save sampled problem in jld format
     trial_dir = save_dir*"trial_"*string(trial_number)*"/"
-    @save trial_dir*"pomdp.jld2" mapworld_pomdp
-
-    # Write out problem specifics in info.txt
-    io = open(trial_dir*"info.txt", "w")
-    write(io, "Trial "*string(trial_number)*"\n\n")
-    write(io, "goal options:\n")
-    write(io, string(mapworld_pomdp.goal_options)*"\n\n")
-    write(io, "correct goal index:"*"\n")
-    write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
-    write(io, "start position:\n")
-    write(io, string(start_pos)*"\n")
-    close(io)
+    # @save trial_dir*"pomdp.jld2" mapworld_pomdp
+    #
+    # # Write out problem specifics in info.txt
+    # io = open(trial_dir*"info.txt", "w")
+    # write(io, "Trial "*string(trial_number)*"\n\n")
+    # write(io, "goal options:\n")
+    # write(io, string(mapworld_pomdp.goal_options)*"\n\n")
+    # write(io, "correct goal index:"*"\n")
+    # write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
+    # write(io, "start position:\n")
+    # write(io, string(start_pos)*"\n")
+    # close(io)
 
 
     curr_belstate = initial_belief_state(mapworld_pomdp)
@@ -184,8 +183,8 @@ function initialize_map(trial_number)
     # @show path
 
     # For visualization
-    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    draw(SVGJS(save_dir*"setup_"*string(trial_number)*".svg", 6inch, 6inch), c)
+    # c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
+    # draw(SVGJS(trial_dir*"setup.svg", 6inch, 6inch), c)
     # Ubuntu
     # loadurl(my_window, "file:///home/orianapeltzer/SA_data/"*map_name*"/foo.svg")
     # loadurl(my_window, "file:///home/orianapeltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
@@ -371,7 +370,7 @@ end
 
 
 
-function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inputs=1,method="path_pref",max_depth=30,max_iterations=31)
+function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inputs=1,method="path_pref")
     """Simulate an instance of the pomdp problem"""
 
     global mapworld_pomdp
@@ -388,6 +387,7 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
     # solver = POMCPSolver(rng=RNG, max_depth=30, tree_queries = 100000)
 
     iteration = 1
+    max_iterations = 31
     problem_terminated = false
 
     # Initialize Performance Metrics
@@ -423,6 +423,9 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
 
     previous_obs = 0.0
 
+    states = []
+    observations = []
+
     while (~problem_terminated && iteration < max_iterations)
 
         println("")
@@ -430,7 +433,7 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
         println("Starting iteration "*string(iteration))
 
 
-        solver = POMCPSolver(rng=RNG, max_depth=max_depth-iteration+1, tree_queries = 5000)#+100*iteration)
+        solver = POMCPSolver(rng=RNG, max_depth=61-iteration, tree_queries = 5000)#+100*iteration)
 
         @show true_state.position
         @show curr_belstate.position
@@ -442,6 +445,7 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
         if method != "compliant"
             if new_obs_time
                 # Sample observation
+                # o = sample_human_action(mapworld_pomdp, true_state, RNG)
                 o = sample_human_action(mapworld_pomdp, true_state, RNG)
                 println("Sampled new observation: ")
                 @show o
@@ -472,6 +476,10 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
                 allowed_observation=false
             end
         end
+        if allowed_observation
+            observations = vcat(observations,angle_to_heading(o))
+        end
+        states = vcat(states, deepcopy(true_state))
 
 
 
@@ -597,10 +605,11 @@ function simulate_pomcp(trial_number::Int64,run_number::Int64; time_between_inpu
 
     # Create csv with header and first row
     if run_number==1
-        CSV.write(save_dir*"officemap_data_comparisons.csv",df)
+        CSV.write(save_dir*"data_map2_comparison.csv",df)
     else
-        CSV.write(save_dir*"officemap_data_comparisons.csv",df,append=true)
+        CSV.write(save_dir*"data_map2_comparison.csv",df,append=true)
     end
+    return states, observations
 
 end
 
@@ -636,29 +645,31 @@ end
 # end
 
 
-if ! isinteractive()
+
 # if true
 
-    global mapworld_pomdp
-    global curr_belstate
-    global curr_belstate_goal
-    global true_state
-    global run_number
+global mapworld_pomdp
+global curr_belstate
+global curr_belstate_goal
+global true_state
+global run_number
 
-    num_random_trials = 10
-    # method_list=["path_pref","goal_only","compliant","blended"]
-    method_list = ["path_pref"]
-    # times_between_inputs = [1,5,10,20,30]
-    times_between_inputs = [30]
-    sims_per_setup = 20
+num_random_trials = 1
+method_list=["path_pref","goal_only"]
+# method_list = ["goal_only"]
+times_between_inputs = [1]
+# times_between_inputs = [20]
+sims_per_setup = 1
 
-
-    max_depth=30 # lookahead for the robot
-    max_iterations=31 # for stopping sim early
-
+max_depth=30 # lookahead for the robot
+max_iterations=1 # for stopping sim early
 
 
-    run_number = 82
+
+
+run_number = 1
+
+for k=1:20
 
     for trial_number=1:num_random_trials
 
@@ -676,14 +687,34 @@ if ! isinteractive()
                     global curr_belstate_goal
                     global true_state
                     global run_number
+                    global pref_states
+                    global pref_obs
+                    global goal_states
+                    global goal_obs
                     curr_belstate = initial_belief_state(mapworld_pomdp)
                     curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
                     true_state = initial_state(mapworld_pomdp)
-                    simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method,max_depth=max_depth,max_iterations=max_iterations)
+
+                    if method=="path_pref"
+                        pref_states, pref_obs = simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method)
+                    else
+                        goal_states, goal_obs = simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method)
+                    end
+
+
 
                     run_number += 1
                 end
             end
         end
+        global pref_states
+        global pref_obs
+        global goal_states
+        global goal_obs
+        # render results
+        # @infiltrate
+        c = POMDPTools.render(mapworld_pomdp, pref_states, pref_obs, goal_states,goal_obs);
+        draw(SVGJS(save_dir*"pref_goal_comparison_"*string(k)*".svg", 6inch, 6inch), c)
     end
+
 end

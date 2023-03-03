@@ -45,7 +45,8 @@ using Infiltrator
 # ---------------- Experiment Parameters -----------------------
 # Map of the environment
 # map_name = "2_10x10_squareobstacle_map"
-map_name = "4_10x10_office_map"
+# map_name = "4_10x10_office_map"
+map_name = "3_20x20_office_map"
 # Save directory
 save_dir = "/home/orianapeltzer/SA_data/"*map_name*"/"
 
@@ -95,7 +96,7 @@ function initialize_map(trial_number)
 
     # This can all be replaced by mapworld_pomdp = load(pomdp problem jld) -- #
     # Retrieve the occupancy map from the .jl file
-    grid_side = 10
+    grid_side = 20
     OBSTACLE_MAP = map_occupancy_grid()
 
     BII_gamma=1.5
@@ -155,24 +156,24 @@ function initialize_map(trial_number)
     # ----------------------------------------------------------------------- #
 
     # Save sampled problem in jld format
-    trial_dir = save_dir*"trial_"*string(trial_number)*"/"
-    @save trial_dir*"pomdp.jld2" mapworld_pomdp
+    # trial_dir = save_dir*"trial_"*string(trial_number)*"/"
+    # @save trial_dir*"pomdp.jld2" mapworld_pomdp
+    #
+    # # Write out problem specifics in info.txt
+    # io = open(trial_dir*"info.txt", "w")
+    # write(io, "Trial "*string(trial_number)*"\n\n")
+    # write(io, "goal options:\n")
+    # write(io, string(mapworld_pomdp.goal_options)*"\n\n")
+    # write(io, "correct goal index:"*"\n")
+    # write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
+    # write(io, "start position:\n")
+    # write(io, string(start_pos)*"\n")
+    # close(io)
 
-    # Write out problem specifics in info.txt
-    io = open(trial_dir*"info.txt", "w")
-    write(io, "Trial "*string(trial_number)*"\n\n")
-    write(io, "goal options:\n")
-    write(io, string(mapworld_pomdp.goal_options)*"\n\n")
-    write(io, "correct goal index:"*"\n")
-    write(io, string(mapworld_pomdp.true_goal_index)*"\n\n")
-    write(io, "start position:\n")
-    write(io, string(start_pos)*"\n")
-    close(io)
 
-
-    curr_belstate = initial_belief_state(mapworld_pomdp)
-    curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
-    true_state = initial_state(mapworld_pomdp)
+    # curr_belstate = initial_belief_state(mapworld_pomdp)
+    # curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
+    # true_state = initial_state(mapworld_pomdp)
 
     # SHORTEST PATH DEBUGGING
     # start_vertex = 5
@@ -184,8 +185,8 @@ function initialize_map(trial_number)
     # @show path
 
     # For visualization
-    c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
-    draw(SVGJS(save_dir*"setup_"*string(trial_number)*".svg", 6inch, 6inch), c)
+    # c = POMDPTools.render(mapworld_pomdp, true_state, curr_belstate)
+    # draw(SVGJS(save_dir*"setup_"*string(trial_number)*".svg", 6inch, 6inch), c)
     # Ubuntu
     # loadurl(my_window, "file:///home/orianapeltzer/SA_data/"*map_name*"/foo.svg")
     # loadurl(my_window, "file:///home/orianapeltzer/catkin_ws/src/joystick_pomcp/src/foo.svg")
@@ -645,45 +646,14 @@ if ! isinteractive()
     global true_state
     global run_number
 
-    num_random_trials = 10
-    # method_list=["path_pref","goal_only","compliant","blended"]
-    method_list = ["path_pref"]
-    # times_between_inputs = [1,5,10,20,30]
-    times_between_inputs = [30]
-    sims_per_setup = 20
 
+    initialize_map(1)
 
-    max_depth=30 # lookahead for the robot
-    max_iterations=31 # for stopping sim early
+    println("Map initialized!")
+
+    c = POMDPTools.render(mapworld_pomdp)
+    draw(SVGJS(save_dir*"setup_"*string(map_name)*".svg", 6inch, 6inch), c)
 
 
 
-    run_number = 82
-
-    for trial_number=1:num_random_trials
-
-        # Generate problem instance (trial)
-        initialize_map(trial_number)
-
-        println("Map initialized!")
-
-        # Loop through time between inputs (runs with different deltaT parameter)
-        for method in method_list
-            for deltat in times_between_inputs
-                for sim_num in 1:sims_per_setup
-                    global mapworld_pomdp
-                    global curr_belstate
-                    global curr_belstate_goal
-                    global true_state
-                    global run_number
-                    curr_belstate = initial_belief_state(mapworld_pomdp)
-                    curr_belstate_goal = initial_belief_state_goal(mapworld_pomdp)
-                    true_state = initial_state(mapworld_pomdp)
-                    simulate_pomcp(trial_number,run_number;time_between_inputs=deltat,method=method,max_depth=max_depth,max_iterations=max_iterations)
-
-                    run_number += 1
-                end
-            end
-        end
-    end
 end

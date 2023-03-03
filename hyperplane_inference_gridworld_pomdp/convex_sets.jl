@@ -183,7 +183,7 @@ mapping -- dict mapping index in b (reduced) to index in list of all hyperplanes
 """
 
 """Function creating a hyperplane arrangement structure from obstacle inputs"""
-function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obstacle}, limits::contour)
+function create_hyperplane_arrangement(root_point::Array, obstacles, limits::contour, obstacle_map)
 
     n=2 # Dimension of the problem
 
@@ -200,12 +200,41 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
     # Queue of nodes to add to the graph
     openset = Queue{waitlisted_polytope}()
 
+    obstacle_indices_in_A = Dict()
+
     # Get global A,b by stacking obstacles
     A = nothing
     b = nothing
     for obs in obstacles
-        A = vcat(A, obs.A)
-        b = vcat(b, obs.b)
+        @show obs
+        for i=1:length(obs.b) # Go through each obstacle hyp. to remove duplicates
+            # Determine whether the row is duplicate
+            row_already_in_A = false
+            if ~isnothing(b)
+
+                obs_A_i = obs.A[i,:]
+                obs_b_i = obs.b[i]
+                for j=2:length(b)
+                    # global A
+                    # global b
+                    # global row_already_in_A
+                    if ((obs_A_i == A[j,:] && obs_b_i == b[j]) || (obs_A_i == -1 .* A[j,:] && obs_b_i == -b[j]))
+                        row_already_in_A = true
+                    end
+                end
+            end
+            # If the row is not a duplicate, add it
+            if ~row_already_in_A
+                A = vcat(A, obs.A[i,:]')
+                b = vcat(b, obs.b[i])
+                obs_indices = get(obstacle_indices_in_A, obs, nothing)
+                if ~isnothing(obs_indices)
+                    obstacle_indices_in_A[obs] = vcat(obs_indices, length(b)-1)
+                end
+            end
+        end
+        # A = vcat(A, obs.A)
+        # b = vcat(b, obs.b)
     end
     # (debug) remove nothing from beginning of lists?!
     A = A[2:end,:]
@@ -265,8 +294,13 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
             neighbor_H_b[j] = -neighbor_H_b[j]
             neighbor_state[j] = ~neighbor_state[j] # way to flip booleans in julia
 
+            # @infiltrate
+
+            point_in_neighbor = get_point_belonging_to_set(10, 10,neighbor_H_A,neighbor_H_b)
+
             # verify that the neighbor is not an obstacle
-            if neighbor_state ∉ obstacle_states
+            # if neighbor_state ∉ obstacle_states
+            if ~obstacle_map[point_in_neighbor[1],point_in_neighbor[2]]
                 # Add the neighbor to the queue
                 neighbor_polytope = waitlisted_polytope(neighbor_H_A, neighbor_H_b, neighbor_state, vtx_id, j, i)
                 enqueue!(openset, neighbor_polytope)
@@ -358,8 +392,11 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
                    neighbor_H_b[j] = -neighbor_H_b[j]
                    neighbor_state[j] = ~neighbor_state[j] # way to flip booleans in julia
 
+                   point_in_neighbor = get_point_belonging_to_set(20, 20,neighbor_H_A,neighbor_H_b)
+
                    # verify that the neighbor is not an obstacle
-                   if neighbor_state ∉ obstacle_states
+                   # if neighbor_state ∉ obstacle_states
+                   if ~obstacle_map[point_in_neighbor[1],point_in_neighbor[2]]
                        # Add the neighbor to the queue
                        neighbor_polytope = waitlisted_polytope(neighbor_H_A, neighbor_H_b, neighbor_state, vtx_id, j, i)
                        enqueue!(openset, neighbor_polytope)
@@ -369,6 +406,22 @@ function create_hyperplane_arrangement(root_point::Array, obstacles::Array{obsta
         end
     end
     return G
+end
+
+function get_point_belonging_to_set(bdry_x, bdry_y,A,b)
+    """set verifies (global_A*x-global_b)"""
+    for x=1:bdry_x
+        for y=1:bdry_y
+            # point_sequence =[elt>0 for elt in global_A*[x,y]-global_b]
+            # if point_sequence==global_sequence
+            #     return [x,y]
+            # end
+            if is_in_region(A,b,[x,y])
+                return [x,y]
+            end
+        end
+    end
+    return nothing
 end
 
 # struct waitlisted_polytope
